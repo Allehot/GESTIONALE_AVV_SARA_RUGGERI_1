@@ -107,6 +107,120 @@ function App() {
   // calendario: anno/mese navigabili
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth()); // 0-11
+  const [calendarCopyStatus, setCalendarCopyStatus] = useState("");
+  const calendarCopyTimeout = useRef(null);
+
+  const casesById = useMemo(() => {
+    const map = new Map();
+    cases.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [cases]);
+
+  const filteredClients = useMemo(() => {
+    const query = normalizeText(clientQuery);
+    if (!query) return clients;
+    return clients.filter((cl) =>
+      [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [clients, clientQuery]);
+
+  const filteredCases = useMemo(() => {
+    const query = normalizeText(caseQuery);
+    return cases.filter((c) => {
+      if (caseStatusFilter !== "all" && normalizeText(c.status) !== normalizeText(caseStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      return [c.number, c.subject, c.clientName, c.caseType, c.proceedingType, c.status]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [cases, caseQuery, caseStatusFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = normalizeText(invoiceQuery);
+    if (!query) return invoices;
+    return invoices.filter((inv) =>
+      [inv.number, inv.clientName, inv.caseNumber, inv.date]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [invoices, invoiceQuery]);
+
+  const filteredDeadlines = useMemo(() => {
+    const query = normalizeText(deadlineQuery);
+    return deadlines.filter((d) => {
+      if (deadlineTypeFilter !== "all" && normalizeText(d.type) !== normalizeText(deadlineTypeFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      const relatedCase = casesById.get(d.caseId);
+      return [d.date, d.type, d.description, relatedCase ? relatedCase.subject : "", relatedCase ? relatedCase.number : ""]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
+
+  const calendarFeedUrl = useMemo(() => {
+    if (typeof window === "undefined") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    const origin = window.location && window.location.origin ? window.location.origin : "";
+    if (!origin || origin === "null") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    return `${origin}${API_BASE}/deadlines/ics`;
+  }, []);
+
+  const calendarSubscribeUrl = useMemo(() => {
+    if (!calendarFeedUrl) return "";
+    try {
+      const url = new URL(calendarFeedUrl, typeof window !== "undefined" ? window.location.href : undefined);
+      url.protocol = "webcal:";
+      return url.toString();
+    } catch (err) {
+      if (calendarFeedUrl.startsWith("https://")) {
+        return `webcal://${calendarFeedUrl.slice("https://".length)}`;
+      }
+      if (calendarFeedUrl.startsWith("http://")) {
+        return `webcal://${calendarFeedUrl.slice("http://".length)}`;
+      }
+      return calendarFeedUrl;
+    }
+  }, [calendarFeedUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (calendarCopyTimeout.current) {
+        clearTimeout(calendarCopyTimeout.current);
+      }
+    };
+  }, []);
+
+  const copyCalendarLink = async () => {
+    if (!calendarFeedUrl) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(calendarFeedUrl);
+        setCalendarCopyStatus("Link copiato negli appunti.");
+      } else {
+        window.prompt("Copia il link del calendario", calendarFeedUrl);
+        setCalendarCopyStatus("Copia il link mostrato e incollalo in Calendario Apple.");
+      }
+    } catch (err) {
+      setCalendarCopyStatus("Copia non riuscita, copia manualmente il link sottostante.");
+    }
+    if (calendarCopyTimeout.current) {
+      clearTimeout(calendarCopyTimeout.current);
+    }
+    calendarCopyTimeout.current = setTimeout(() => {
+      setCalendarCopyStatus("");
+    }, 4000);
+  };
 
   const casesById = useMemo(() => {
     const map = new Map();
@@ -906,6 +1020,52 @@ function App() {
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div style={card}>
+                <h3>Sincronizza con Calendario Apple</h3>
+                <p style={{ fontSize: 13, color: "#4b5563" }}>
+                  Iscriviti al calendario delle scadenze su Mac o iPhone per ricevere
+                  automaticamente ogni aggiornamento. Su <b>Mac</b> apri l'app Calendario e scegli
+                  <i>File → Nuova iscrizione al calendario...</i>; su <b>iPhone</b> vai in
+                  <i>Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario
+                  sottoscritto</i> e incolla il link qui sotto.
+                </p>
+                <div
+                  style={{
+                    margin: "12px 0",
+                    padding: "10px 12px",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    fontFamily: "SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                    fontSize: 13,
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {calendarFeedUrl}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button onClick={copyCalendarLink} style={{ ...btn, background: "#0f766e" }}>
+                    Copia link
+                  </button>
+                  {calendarSubscribeUrl && (
+                    <a
+                      href={calendarSubscribeUrl}
+                      style={{ ...btn, display: "inline-block", textDecoration: "none" }}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Apri in Calendario
+                    </a>
+                  )}
+                  {calendarCopyStatus && (
+                    <span style={{ fontSize: 12, color: "#047857" }}>{calendarCopyStatus}</span>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 12 }}>
+                  Se utilizzi il gestionale in rete locale, assicurati che l'indirizzo sopra sia raggiungibile
+                  anche da iPhone e Mac (es. sostituendo <code>localhost</code> con l'indirizzo IP del computer).
+                </p>
               </div>
             </>
           )}
