@@ -52,6 +52,14 @@ const statusColor = (t) => {
   return "#e0f2fe"; // azzurrino per scadenza
 };
 
+const guardianStatusColor = (status) => {
+  if (!status) return "#e5e7eb";
+  const value = status.toLowerCase();
+  if (value === "attivo") return "#bbf7d0";
+  if (value === "chiuso" || value === "archiviato") return "#fbcfe8";
+  return "#e0e7ff";
+};
+
 function App() {
   // auth
   const [user, setUser] = useState(null);
@@ -72,6 +80,7 @@ function App() {
   const [cases, setCases] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [guardianships, setGuardianships] = useState([]);
 
   // dashboard
   const [dashboard, setDashboard] = useState(null);
@@ -91,11 +100,25 @@ function App() {
   const [showNewCase, setShowNewCase] = useState(false);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewDeadline, setShowNewDeadline] = useState(false);
+  const [showGuardianModal, setShowGuardianModal] = useState(false);
+  const [editingGuardian, setEditingGuardian] = useState(null);
 
   // dettaglio pratica
   const [selectedCase, setSelectedCase] = useState(null);
   const [caseLogs, setCaseLogs] = useState([]);
   const [newCaseNote, setNewCaseNote] = useState("");
+  const [selectedGuardian, setSelectedGuardian] = useState(null);
+  const [guardianDetailTab, setGuardianDetailTab] = useState("overview");
+  const [guardianDetailLoading, setGuardianDetailLoading] = useState(false);
+  const [guardianEntryModal, setGuardianEntryModal] = useState(null);
+  const guardianTabs = [
+    { id: "overview", label: "Scheda" },
+    { id: "documents", label: "Documenti" },
+    { id: "inventory", label: "Inventario" },
+    { id: "finance", label: "Entrate / Uscite" },
+    { id: "reports", label: "Rendiconti" },
+    { id: "filings", label: "Depositi telematici" }
+  ];
 
   // modale modifica scadenza (da calendario o lista)
   const [editDeadline, setEditDeadline] = useState(null);
@@ -293,13 +316,13 @@ function App() {
         monthlyData
       ] = await Promise.all([
         fetchJson(`${API_BASE}/studio`),
-        fetchJson(`${API_BASE}/clients`),
-        fetchJson(`${API_BASE}/cases`),
-        fetchJson(`${API_BASE}/deadlines`),
-        fetchJson(`${API_BASE}/invoices`),
+        fetchJson(`${API_BASE}/clienti`),
+        fetchJson(`${API_BASE}/casi`),
+        fetchJson(`${API_BASE}/scadenze`),
+        fetchJson(`${API_BASE}/fatture`),
         fetchJson(`${API_BASE}/reports/dashboard`),
-        fetchJson(`${API_BASE}/reports/upcoming-deadlines`),
-        fetchJson(`${API_BASE}/reports/monthly`)
+        fetchJson(`${API_BASE}/reports/recenti`),
+        fetchJson(`${API_BASE}/reports/mesi`)
       ]);
 
       setStudio(studioData);
@@ -590,6 +613,348 @@ function App() {
     await loadAll();
   };
 
+  // AMMINISTRATI DI SOSTEGNO -----------------------------------
+  const openGuardian = async (g) => {
+    if (!g || !g.id) return;
+    if (view !== "guardianships") {
+      setView("guardianships");
+    }
+    setGuardianDetailLoading(true);
+    try {
+      const detail = await runOrAlert(
+        () => fetchJson(`${API_BASE}/guardianships/${g.id}`),
+        "Errore durante il caricamento della scheda AdS"
+      );
+      if (detail) {
+        applyGuardianUpdate(detail, { select: true });
+      }
+    } finally {
+      setGuardianDetailLoading(false);
+    }
+  };
+
+  const startNewGuardian = () => {
+    setEditingGuardian(null);
+    setShowGuardianModal(true);
+  };
+
+  const startEditGuardian = (g) => {
+    setEditingGuardian(g);
+    setShowGuardianModal(true);
+  };
+
+  const closeGuardianModal = () => {
+    setShowGuardianModal(false);
+    setEditingGuardian(null);
+  };
+
+  const openGuardianEntryModal = (type, item = null) => {
+    setGuardianEntryModal({ type, item });
+  };
+
+  const closeGuardianEntryModal = () => {
+    setGuardianEntryModal(null);
+  };
+
+  const submitGuardian = async (e) => {
+    e.preventDefault();
+    const editing = editingGuardian;
+    const form = e.target;
+    const payload = {
+      fullName: form.fullName.value.trim(),
+      birthDate: form.birthDate.value,
+      fiscalCode: form.fiscalCode.value.trim(),
+      residence: form.residence.value.trim(),
+      supportLevel: form.supportLevel.value.trim(),
+      court: form.court.value.trim(),
+      judge: form.judge.value.trim(),
+      decreeDate: form.decreeDate.value,
+      reportingFrequency: form.reportingFrequency.value.trim(),
+      nextReportDue: form.nextReportDue.value,
+      lastReportSent: form.lastReportSent.value,
+      income: form.income.value.trim(),
+      healthNotes: form.healthNotes.value.trim(),
+      socialServicesContact: form.socialServicesContact.value.trim(),
+      familyContacts: form.familyContacts.value.trim(),
+      notes: form.notes.value.trim(),
+      status: form.status.value
+    };
+    const url = editing ? `${API_BASE}/guardianships/${editing.id}` : `${API_BASE}/guardianships`;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento dell'amministrato" : "Errore durante la creazione dell'amministrato"
+    );
+    if (!result) return;
+    setShowGuardianModal(false);
+    setEditingGuardian(null);
+    const shouldSelect = !editing || (selectedGuardian && selectedGuardian.id === editing.id);
+    applyGuardianUpdate(result, { select: shouldSelect });
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardian = async (g) => {
+    if (!window.confirm("Eliminare questo amministrato?")) return;
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/guardianships/${g.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione dell'amministrato"
+    );
+    if (!success) return;
+    if (selectedGuardian && selectedGuardian.id === g.id) {
+      setSelectedGuardian(null);
+    }
+    setGuardianships((prev) => prev.filter((item) => item.id !== g.id));
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianDocument = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "document" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      title: form.title.value.trim(),
+      category: form.category.value.trim(),
+      date: form.date.value,
+      reference: form.reference.value.trim(),
+      link: form.link.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/documents`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del documento" : "Errore durante l'aggiunta del documento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianDocument = async (doc) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo documento dall'archivio?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/documents/${doc.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del documento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitInventoryItem = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "inventory" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const quantityValue = Number(form.quantity.value || 1);
+    const totalValue = Number(form.value.value || 0);
+    const payload = {
+      label: form.label.value.trim(),
+      category: form.category.value.trim(),
+      location: form.location.value.trim(),
+      quantity: Number.isFinite(quantityValue) ? quantityValue : 1,
+      value: Number.isFinite(totalValue) ? totalValue : 0,
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/inventory`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento dell'inventario" : "Errore durante l'inserimento del bene"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteInventoryItem = async (item) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Rimuovere questa voce dall'inventario?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/inventory/${item.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante la rimozione del bene"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianMovement = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "movement" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const amountValue = Number(form.amount.value);
+    if (!Number.isFinite(amountValue)) {
+      alert("Inserisci un importo numerico valido.");
+      return;
+    }
+    const payload = {
+      type: form.type.value,
+      amount: amountValue,
+      date: form.date.value,
+      category: form.category.value.trim(),
+      description: form.description.value.trim(),
+      reference: form.reference.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/movements`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del movimento" : "Errore durante l'inserimento del movimento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianMovement = async (movement) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questa movimentazione economica?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/movements/${movement.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del movimento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianReport = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "report" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      title: form.title.value.trim(),
+      periodStart: form.periodStart.value,
+      periodEnd: form.periodEnd.value,
+      deliveredAt: form.deliveredAt.value,
+      status: form.status.value,
+      protocol: form.protocol.value.trim(),
+      attachment: form.attachment.value.trim(),
+      summary: form.summary.value,
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/reports`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del rendiconto" : "Errore durante la registrazione del rendiconto"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianReport = async (report) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo rendiconto?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/reports/${report.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del rendiconto"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianFiling = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "filing" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      subject: form.subject.value.trim(),
+      date: form.date.value,
+      channel: form.channel.value.trim(),
+      registry: form.registry.value.trim(),
+      protocol: form.protocol.value.trim(),
+      outcome: form.outcome.value.trim(),
+      attachment: form.attachment.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/filings`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del deposito" : "Errore durante la registrazione del deposito"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianFiling = async (filing) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo deposito telematico?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/filings/${filing.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del deposito"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
   // FATTURE ---------------------------------------------------
   const submitNewInvoice = async (e) => {
     e.preventDefault();
@@ -790,13 +1155,16 @@ function App() {
           <button onClick={() => setView("dashboard")} style={navBtn(view === "dashboard")}>
             Dashboard
           </button>
-          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}>
+          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}> 
             Clienti
           </button>
-          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}>
+          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}> 
             Pratiche
           </button>
-          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}>
+          <button onClick={() => setView("guardianships")} style={navBtn(view === "guardianships")}> 
+            Amministrati (AdS)
+          </button>
+          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}> 
             Fatture
           </button>
           <button onClick={() => setView("deadlines")} style={navBtn(view === "deadlines")}>
@@ -1569,6 +1937,20 @@ function App() {
 
       {/* MODALI -------------------------------------------------*/}
 
+      {/* nuovo / modifica amministrato */}
+      {showGuardianModal && (
+        <Modal
+          onClose={closeGuardianModal}
+          title={editingGuardian ? "Modifica amministrato di sostegno" : "Nuovo amministrato di sostegno"}
+        >
+          <GuardianForm
+            initialData={editingGuardian}
+            onSubmit={submitGuardian}
+            onCancel={closeGuardianModal}
+          />
+        </Modal>
+      )}
+
       {/* nuovo cliente */}
       {showNewClient && (
         <Modal onClose={() => setShowNewClient(false)} title="Nuovo cliente">
@@ -1884,6 +2266,127 @@ function Modal({ children, onClose, title }) {
         {children}
       </div>
     </div>
+  );
+}
+
+function GuardianForm({ initialData, onSubmit, onCancel }) {
+  const data = initialData || {};
+  return (
+    <form onSubmit={onSubmit}>
+      <label>
+        Nome e cognome<br />
+        <input name="fullName" required defaultValue={data.fullName || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Stato amministrazione<br />
+        <select name="status" defaultValue={data.status || "attivo"} style={{ width: "100%" }}>
+          <option value="attivo">Attivo</option>
+          <option value="chiuso">Chiuso</option>
+          <option value="archiviato">Archiviato</option>
+        </select>
+      </label>
+      <br />
+      <label>
+        Livello di supporto / progetto<br />
+        <input name="supportLevel" defaultValue={data.supportLevel || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Data di nascita<br />
+        <input name="birthDate" type="date" defaultValue={data.birthDate || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Codice fiscale<br />
+        <input name="fiscalCode" defaultValue={data.fiscalCode || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Residenza<br />
+        <input name="residence" defaultValue={data.residence || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Tribunale competente<br />
+        <input name="court" defaultValue={data.court || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Giudice tutelare<br />
+        <input name="judge" defaultValue={data.judge || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Data decreto di nomina<br />
+        <input name="decreeDate" type="date" defaultValue={data.decreeDate || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Frequenza rendiconti (es. annuale, semestrale)<br />
+        <input
+          name="reportingFrequency"
+          defaultValue={data.reportingFrequency || ""}
+          style={{ width: "100%" }}
+        />
+      </label>
+      <br />
+      <label>
+        Prossima scadenza rendiconto<br />
+        <input name="nextReportDue" type="date" defaultValue={data.nextReportDue || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Ultimo rendiconto inviato<br />
+        <input name="lastReportSent" type="date" defaultValue={data.lastReportSent || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Entrate, contributi e patrimonio<br />
+        <input name="income" defaultValue={data.income || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Contatto servizi sociali<br />
+        <input
+          name="socialServicesContact"
+          defaultValue={data.socialServicesContact || ""}
+          style={{ width: "100%" }}
+        />
+      </label>
+      <br />
+      <label>
+        Familiari e riferimenti utili<br />
+        <textarea
+          name="familyContacts"
+          defaultValue={data.familyContacts || ""}
+          style={{ width: "100%", minHeight: 60 }}
+        />
+      </label>
+      <br />
+      <label>
+        Note sanitarie<br />
+        <textarea
+          name="healthNotes"
+          defaultValue={data.healthNotes || ""}
+          style={{ width: "100%", minHeight: 60 }}
+        />
+      </label>
+      <br />
+      <label>
+        Note operative aggiuntive<br />
+        <textarea name="notes" defaultValue={data.notes || ""} style={{ width: "100%", minHeight: 80 }} />
+      </label>
+      <br />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" onClick={onCancel} style={{ ...btn, background: "#6b7280" }}>
+          Annulla
+        </button>
+        <button type="submit" style={btn}>
+          Salva
+        </button>
+      </div>
+    </form>
   );
 }
 
