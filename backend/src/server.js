@@ -129,6 +129,66 @@ function prettyLineType(t) {
   return t;
 }
 
+function escapeICSText(value) {
+  if (value === undefined || value === null) return "";
+  return value
+    .toString()
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function foldICSLine(line) {
+  const maxLength = 74;
+  if (Buffer.byteLength(line, "utf8") <= maxLength) return [line];
+  const result = [];
+  let remaining = line;
+  while (Buffer.byteLength(remaining, "utf8") > maxLength) {
+    let slice = "";
+    let bytes = 0;
+    let i = 0;
+    while (i < remaining.length && bytes < maxLength) {
+      const char = remaining[i];
+      const charBytes = Buffer.byteLength(char, "utf8");
+      if (bytes + charBytes > maxLength) break;
+      slice += char;
+      bytes += charBytes;
+      i += 1;
+    }
+    if (!slice) {
+      slice = remaining.slice(0, maxLength);
+      i = maxLength;
+    }
+    result.push(slice);
+    remaining = " " + remaining.slice(i);
+  }
+  result.push(remaining);
+  return result;
+}
+
+function formatICSTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
+function parseDateToUTC(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+  const [year, month, day] = parts;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateToICS(date) {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function addDaysUTC(date, days) {
+  const copy = new Date(date.getTime());
+  copy.setUTCDate(copy.getUTCDate() + days);
+  return copy;
+}
+
 // aggiunge una riga di cronostoria
 function addLog({ caseId, action, detail }) {
   const logItem = {
@@ -377,6 +437,62 @@ app.get("/api/deadlines", (req, res) => {
   if (from) items = items.filter(d => d.date >= from);
   if (to) items = items.filter(d => d.date <= to);
   res.json(items);
+});
+
+app.get("/api/deadlines/ics", (req, res) => {
+  const deadlines = (db.deadlines || []).filter(d => d.date).sort((a, b) => a.date.localeCompare(b.date));
+  const casesById = new Map((db.cases || []).map(c => [c.id, c]));
+  const now = new Date();
+  const lines = [];
+  const pushLine = line => {
+    foldICSLine(line).forEach(l => lines.push(l));
+  };
+
+  pushLine("BEGIN:VCALENDAR");
+  pushLine("VERSION:2.0");
+  pushLine("PRODID:-//Gestionale Studio Legale//Calendario Scadenze//IT");
+  pushLine("CALSCALE:GREGORIAN");
+  pushLine("METHOD:PUBLISH");
+  pushLine(`X-WR-CALNAME:${escapeICSText(db.studio && db.studio.name ? `${db.studio.name} - Scadenze` : "Scadenze Studio")}`);
+  pushLine("X-WR-TIMEZONE:Europe/Rome");
+
+  deadlines.forEach(deadline => {
+    const startDate = parseDateToUTC(deadline.date);
+    if (!startDate) return;
+    const endDate = addDaysUTC(startDate, 1);
+    const caseInfo = casesById.get(deadline.caseId);
+    const summaryParts = [];
+    if (deadline.type) summaryParts.push(deadline.type.charAt(0).toUpperCase() + deadline.type.slice(1));
+    if (deadline.description) summaryParts.push(deadline.description);
+    const summary = summaryParts.length ? summaryParts.join(" - ") : "Scadenza";
+    const descriptionParts = [];
+    if (deadline.description) descriptionParts.push(deadline.description);
+    const typeLabel = deadline.type
+      ? deadline.type.charAt(0).toUpperCase() + deadline.type.slice(1)
+      : "Scadenza";
+    descriptionParts.push(`Tipo: ${typeLabel}`);
+    if (caseInfo) {
+      descriptionParts.push(`${caseInfo.number || ""} ${caseInfo.subject || ""}`.trim());
+      if (caseInfo.clientName) descriptionParts.push(`Cliente: ${caseInfo.clientName}`);
+    }
+    if (deadline.assignedTo) descriptionParts.push(`Assegnato a: ${deadline.assignedTo}`);
+    const description = descriptionParts.join("\n");
+
+    pushLine("BEGIN:VEVENT");
+    pushLine(`UID:${escapeICSText(deadline.id)}@gestionestudio`);
+    pushLine(`DTSTAMP:${formatICSTimestamp(now)}`);
+    pushLine(`DTSTART;VALUE=DATE:${formatDateToICS(startDate)}`);
+    pushLine(`DTEND;VALUE=DATE:${formatDateToICS(endDate)}`);
+    pushLine(`SUMMARY:${escapeICSText(summary)}`);
+    if (description) pushLine(`DESCRIPTION:${escapeICSText(description)}`);
+    pushLine("END:VEVENT");
+  });
+
+  pushLine("END:VCALENDAR");
+
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline; filename=\"scadenze-studio.ics\"");
+  res.send(lines.join("\r\n") + "\r\n");
 });
 
 app.post("/api/cases/:id/deadlines", (req, res) => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 const API_BASE = "/api";
 
 // Stili base
@@ -30,6 +30,12 @@ const btn = {
   borderRadius: 6,
   cursor: "pointer"
 };
+const searchInput = {
+  padding: "6px 10px",
+  borderRadius: 6,
+  border: "1px solid #d1d5db",
+  minWidth: 220
+};
 const card = {
   background: "#fff",
   borderRadius: 10,
@@ -53,6 +59,10 @@ function App() {
   const [loginPass, setLoginPass] = useState("admin");
   const [loginError, setLoginError] = useState("");
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+
   // vista corrente
   const [view, setView] = useState("dashboard");
 
@@ -67,6 +77,14 @@ function App() {
   const [dashboard, setDashboard] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [monthly, setMonthly] = useState(null);
+
+  // filtri
+  const [clientQuery, setClientQuery] = useState("");
+  const [caseQuery, setCaseQuery] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("all");
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [deadlineQuery, setDeadlineQuery] = useState("");
+  const [deadlineTypeFilter, setDeadlineTypeFilter] = useState("all");
 
   // modali
   const [showNewClient, setShowNewClient] = useState(false);
@@ -89,38 +107,173 @@ function App() {
   // calendario: anno/mese navigabili
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth()); // 0-11
+  const [calendarCopyStatus, setCalendarCopyStatus] = useState("");
+  const calendarCopyTimeout = useRef(null);
+
+  const casesById = useMemo(() => {
+    const map = new Map();
+    cases.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [cases]);
+
+  const filteredClients = useMemo(() => {
+    const query = normalizeText(clientQuery);
+    if (!query) return clients;
+    return clients.filter((cl) =>
+      [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [clients, clientQuery]);
+
+  const filteredCases = useMemo(() => {
+    const query = normalizeText(caseQuery);
+    return cases.filter((c) => {
+      if (caseStatusFilter !== "all" && normalizeText(c.status) !== normalizeText(caseStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      return [c.number, c.subject, c.clientName, c.caseType, c.proceedingType, c.status]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [cases, caseQuery, caseStatusFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = normalizeText(invoiceQuery);
+    if (!query) return invoices;
+    return invoices.filter((inv) =>
+      [inv.number, inv.clientName, inv.caseNumber, inv.date]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [invoices, invoiceQuery]);
+
+  const filteredDeadlines = useMemo(() => {
+    const query = normalizeText(deadlineQuery);
+    return deadlines.filter((d) => {
+      if (deadlineTypeFilter !== "all" && normalizeText(d.type) !== normalizeText(deadlineTypeFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      const relatedCase = casesById.get(d.caseId);
+      return [d.date, d.type, d.description, relatedCase ? relatedCase.subject : "", relatedCase ? relatedCase.number : ""]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
+
+  const calendarFeedUrl = useMemo(() => {
+    if (typeof window === "undefined") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    const origin = window.location && window.location.origin ? window.location.origin : "";
+    if (!origin || origin === "null") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    return `${origin}${API_BASE}/deadlines/ics`;
+  }, []);
+
+  const calendarSubscribeUrl = useMemo(() => {
+    if (!calendarFeedUrl) return "";
+    try {
+      const url = new URL(calendarFeedUrl, typeof window !== "undefined" ? window.location.href : undefined);
+      url.protocol = "webcal:";
+      return url.toString();
+    } catch (err) {
+      if (calendarFeedUrl.startsWith("https://")) {
+        return `webcal://${calendarFeedUrl.slice("https://".length)}`;
+      }
+      if (calendarFeedUrl.startsWith("http://")) {
+        return `webcal://${calendarFeedUrl.slice("http://".length)}`;
+      }
+      return calendarFeedUrl;
+    }
+  }, [calendarFeedUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (calendarCopyTimeout.current) {
+        clearTimeout(calendarCopyTimeout.current);
+      }
+    };
+  }, []);
+
+  const copyCalendarLink = async () => {
+    if (!calendarFeedUrl) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(calendarFeedUrl);
+        setCalendarCopyStatus("Link copiato negli appunti.");
+      } else {
+        window.prompt("Copia il link del calendario", calendarFeedUrl);
+        setCalendarCopyStatus("Copia il link mostrato e incollalo in Calendario Apple.");
+      }
+    } catch (err) {
+      setCalendarCopyStatus("Copia non riuscita, copia manualmente il link sottostante.");
+    }
+    if (calendarCopyTimeout.current) {
+      clearTimeout(calendarCopyTimeout.current);
+    }
+    calendarCopyTimeout.current = setTimeout(() => {
+      setCalendarCopyStatus("");
+    }, 4000);
+  };
 
   // caricamento di tutti i dati
   async function loadAll() {
-    const [
-      resStudio,
-      resClients,
-      resCases,
-      resDeadlines,
-      resInvoices,
-      resDash,
-      resUpcoming,
-      resMonthly
-    ] = await Promise.all([
-      fetch(`${API_BASE}/studio`),
-      fetch(`${API_BASE}/clients`),
-      fetch(`${API_BASE}/cases`),
-      fetch(`${API_BASE}/deadlines`),
-      fetch(`${API_BASE}/invoices`),
-      fetch(`${API_BASE}/reports/dashboard`),
-      fetch(`${API_BASE}/reports/upcoming-deadlines`),
-      fetch(`${API_BASE}/reports/monthly`)
-    ]);
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const [
+        studioData,
+        clientsData,
+        casesData,
+        deadlinesData,
+        invoicesData,
+        dashboardData,
+        upcomingData,
+        monthlyData
+      ] = await Promise.all([
+        fetchJson(`${API_BASE}/studio`),
+        fetchJson(`${API_BASE}/clients`),
+        fetchJson(`${API_BASE}/cases`),
+        fetchJson(`${API_BASE}/deadlines`),
+        fetchJson(`${API_BASE}/invoices`),
+        fetchJson(`${API_BASE}/reports/dashboard`),
+        fetchJson(`${API_BASE}/reports/upcoming-deadlines`),
+        fetchJson(`${API_BASE}/reports/monthly`)
+      ]);
 
-    setStudio(await resStudio.json());
-    setClients(await resClients.json());
-    setCases(await resCases.json());
-    setDeadlines(await resDeadlines.json());
-    setInvoices(await resInvoices.json());
-    setDashboard(await resDash.json());
-    setUpcoming(await resUpcoming.json());
-    setMonthly(await resMonthly.json());
+      setStudio(studioData);
+      setClients(Array.isArray(clientsData) ? clientsData : []);
+      setCases(Array.isArray(casesData) ? casesData : []);
+      setDeadlines(Array.isArray(deadlinesData) ? deadlinesData : []);
+      setInvoices(Array.isArray(invoicesData) ? invoicesData : []);
+      setDashboard(dashboardData || null);
+      setUpcoming(Array.isArray(upcomingData) ? upcomingData : []);
+      setMonthly(monthlyData || null);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Errore durante il caricamento dei dati", err);
+      setLoadError(err.message || "Impossibile caricare i dati");
+    } finally {
+      setIsLoading(false);
+    }
   }
+
+  const runOrAlert = async (action, errorMessage) => {
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      console.error(errorMessage, err);
+      alert(`${errorMessage}${err?.message ? `: ${err.message}` : ""}`);
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -131,18 +284,20 @@ function App() {
   // login
   const doLogin = async (e) => {
     e.preventDefault();
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: loginUser, password: loginPass })
-    });
-    if (!res.ok) {
-      setLoginError("Credenziali non valide");
-      return;
+    try {
+      const data = await fetchJson(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUser, password: loginPass })
+      });
+      if (!data || !data.user) {
+        throw new Error("Credenziali non valide");
+      }
+      setUser(data.user);
+      setLoginError("");
+    } catch (err) {
+      setLoginError(err.message || "Credenziali non valide");
     }
-    const data = await res.json();
-    setUser(data.user);
-    setLoginError("");
   };
 
   // CLIENTI ---------------------------------------------------
@@ -159,11 +314,16 @@ function App() {
       address: form.address.value,
       notes: form.notes.value
     };
-    await fetch(`${API_BASE}/clients`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/clients`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione del cliente"
+    );
+    if (!success) return;
     setShowNewClient(false);
     await loadAll();
   };
@@ -171,22 +331,28 @@ function App() {
   const editClient = async (cl) => {
     const name = window.prompt("Nome cliente", cl.name);
     if (!name) return;
-    await fetch(`${API_BASE}/clients/${cl.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    await loadAll();
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/clients/${cl.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        }),
+      "Errore durante l'aggiornamento del cliente"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   const deleteClient = async (cl) => {
     if (!window.confirm("Eliminare questo cliente?")) return;
-    const res = await fetch(`${API_BASE}/clients/${cl.id}`, { method: "DELETE" });
-    if (res.ok) {
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/clients/${cl.id}`, { method: "DELETE" }),
+      "Impossibile eliminare il cliente (ha pratiche o fatture collegate?)"
+    );
+    if (success) {
       await loadAll();
-    } else {
-      const err = await res.json();
-      alert(err.message || "Impossibile eliminare il cliente (ha pratiche o fatture collegate?)");
     }
   };
 
@@ -203,23 +369,33 @@ function App() {
       rgNumber: form.rgNumber.value,
       status: "aperta"
     };
-    await fetch(`${API_BASE}/cases`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della pratica"
+    );
+    if (!success) return;
     setShowNewCase(false);
     await loadAll();
   };
 
   const openCase = async (c) => {
-    const [resCase, resLogs] = await Promise.all([
-      fetch(`${API_BASE}/cases/${c.id}`),
-      fetch(`${API_BASE}/cases/${c.id}/logs`)
-    ]);
-    setSelectedCase(await resCase.json());
-    setCaseLogs(await resLogs.json());
-    setView("case-detail");
+    try {
+      const [caseData, logsData] = await Promise.all([
+        fetchJson(`${API_BASE}/cases/${c.id}`),
+        fetchJson(`${API_BASE}/cases/${c.id}/logs`)
+      ]);
+      setSelectedCase(caseData);
+      setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      setView("case-detail");
+    } catch (err) {
+      console.error("Impossibile aprire la pratica", err);
+      alert(`Impossibile aprire la pratica: ${err?.message || "Errore sconosciuto"}`);
+    }
   };
 
   const editCase = async (c) => {
@@ -227,33 +403,53 @@ function App() {
     if (!subject) return;
     const proceedingType = window.prompt("Procedimento (giudiziale/stragiudiziale):", c.proceedingType || "stragiudiziale");
     const status = window.prompt("Stato (aperta/chiusa):", c.status || "aperta");
-    await fetch(`${API_BASE}/cases/${c.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, status, proceedingType })
-    });
-    await loadAll();
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject, status, proceedingType })
+        }),
+      "Errore durante l'aggiornamento della pratica"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   const deleteCase = async (c) => {
     if (!window.confirm("Eliminare la pratica e le scadenze collegate?")) return;
-    await fetch(`${API_BASE}/cases/${c.id}`, { method: "DELETE" });
-    await loadAll();
-    setSelectedCase(null);
-    setView("cases");
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/cases/${c.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della pratica"
+    );
+    if (success) {
+      await loadAll();
+      setSelectedCase(null);
+      setView("cases");
+    }
   };
 
   // CRONOSTORIA - nota manuale
   const addManualNote = async () => {
     if (!selectedCase || !newCaseNote.trim()) return;
-    await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ detail: newCaseNote })
-    });
-    const resLogs = await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`);
-    setCaseLogs(await resLogs.json());
-    setNewCaseNote("");
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ detail: newCaseNote })
+        }),
+      "Errore durante l'inserimento della nota"
+    );
+    if (!success) return;
+    try {
+      const logsData = await fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`);
+      setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      setNewCaseNote("");
+    } catch (err) {
+      console.error("Errore durante il ricaricamento delle note", err);
+    }
   };
 
   // SCADENZE / UDIENZE ------------------------------------------
@@ -270,30 +466,49 @@ function App() {
       description: form.description.value,
       type: form.type.value
     };
-    await fetch(`${API_BASE}/cases/${caseId}/deadlines`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${caseId}/deadlines`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della scadenza"
+    );
+    if (!success) return;
     setShowNewDeadline(false);
     await loadAll();
     // se sono nel dettaglio pratica, la ricarico
     if (selectedCase && selectedCase.id === caseId) {
-      const resCase = await fetch(`${API_BASE}/cases/${caseId}`);
-      setSelectedCase(await resCase.json());
+      try {
+        const caseData = await fetchJson(`${API_BASE}/cases/${caseId}`);
+        setSelectedCase(caseData);
+      } catch (err) {
+        console.error("Errore durante il ricaricamento della pratica", err);
+      }
     }
   };
 
   const deleteDeadline = async (d) => {
     if (!window.confirm("Eliminare questa scadenza/udienza?")) return;
-    await fetch(`${API_BASE}/deadlines/${d.id}`, { method: "DELETE" });
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/deadlines/${d.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della scadenza"
+    );
+    if (!success) return;
     await loadAll();
     // se è della pratica che sto vedendo, aggiorno
     if (selectedCase && d.caseId === selectedCase.id) {
-      const resCase = await fetch(`${API_BASE}/cases/${selectedCase.id}`);
-      setSelectedCase(await resCase.json());
-      const resLogs = await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`);
-      setCaseLogs(await resLogs.json());
+      try {
+        const [caseData, logsData] = await Promise.all([
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}`),
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`)
+        ]);
+        setSelectedCase(caseData);
+        setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      } catch (err) {
+        console.error("Errore durante l'aggiornamento della pratica", err);
+      }
     }
     setEditDeadline(null);
   };
@@ -306,11 +521,16 @@ function App() {
       description: form.description.value,
       type: form.type.value
     };
-    await fetch(`${API_BASE}/deadlines/${editDeadline.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/deadlines/${editDeadline.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante l'aggiornamento della scadenza"
+    );
+    if (!success) return;
     setEditDeadline(null);
     await loadAll();
   };
@@ -328,19 +548,29 @@ function App() {
         ? [{ description: form.desc.value, amount: Number(form.amount.value || 0) }]
         : []
     };
-    await fetch(`${API_BASE}/invoices`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/invoices`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della fattura"
+    );
+    if (!success) return;
     setShowNewInvoice(false);
     await loadAll();
   };
 
   const deleteInvoice = async (inv) => {
     if (!window.confirm("Eliminare questa fattura?")) return;
-    await fetch(`${API_BASE}/invoices/${inv.id}`, { method: "DELETE" });
-    await loadAll();
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/invoices/${inv.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della fattura"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   // EXPORT -----------------------------------------------------
@@ -461,13 +691,36 @@ function App() {
       <header style={topbarStyle}>
         <div>
           <b>{studio ? studio.name : "Studio Legale"}</b>
-        </div>
-        <div>
           {studio && (
-            <span style={{ fontSize: 12, marginRight: 16 }}>
-              {studio.email} · {studio.phone}
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              {studio.email}
+              {studio.phone ? ` · ${studio.phone}` : ""}
+            </div>
+          )}
+          {lastUpdated && (
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+              Ultimo aggiornamento: {formatDateTime(lastUpdated)}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {loadError && (
+            <span style={{ fontSize: 12, color: "#fbbf24" }}>
+              {loadError}
             </span>
           )}
+          <button
+            onClick={loadAll}
+            disabled={isLoading}
+            style={{
+              ...btn,
+              background: "#1f2937",
+              opacity: isLoading ? 0.6 : 1,
+              cursor: isLoading ? "default" : "pointer"
+            }}
+          >
+            {isLoading ? "Aggiornamento..." : "Aggiorna"}
+          </button>
           <button onClick={() => setUser(null)} style={{ ...btn, background: "#ef4444" }}>
             Esci
           </button>
@@ -504,6 +757,49 @@ function App() {
 
         {/* CONTENT */}
         <main style={{ flex: 1, padding: 20, overflowY: "auto" }}>
+          {isLoading && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: "#dbeafe",
+                color: "#1d4ed8",
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 13
+              }}
+            >
+              ⏳ Aggiornamento dati in corso...
+            </div>
+          )}
+          {loadError && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: "#fee2e2",
+                color: "#b91c1c",
+                padding: "10px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap"
+              }}
+            >
+              <span>⚠️ {loadError}</span>
+              <button
+                onClick={loadAll}
+                style={{
+                  ...btn,
+                  background: "#991b1b",
+                  padding: "4px 10px",
+                  fontSize: 12
+                }}
+              >
+                Riprova
+              </button>
+            </div>
+          )}
           {/* DASHBOARD */}
           {view === "dashboard" && (
             <>
@@ -612,6 +908,35 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per nome, email o telefono"
+                    value={clientQuery}
+                    onChange={(e) => setClientQuery(e.target.value)}
+                    style={searchInput}
+                  />
+                  {clientQuery && (
+                    <button
+                      onClick={() => setClientQuery("")}
+                      style={{ ...btn, background: "#6b7280", padding: "6px 10px" }}
+                    >
+                      Pulisci filtro
+                    </button>
+                  )}
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredClients.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ textAlign: "left" }}>
@@ -622,7 +947,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {clients.map((cl) => (
+                    {filteredClients.map((cl) => (
                       <tr key={cl.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                         <td>{cl.name}</td>
                         <td>{cl.email}</td>
@@ -633,13 +958,59 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {clients.length === 0 && (
+                    {filteredClients.length === 0 && (
                       <tr>
                         <td colSpan="4">Nessun cliente</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div style={card}>
+                <h3>Sincronizza con Calendario Apple</h3>
+                <p style={{ fontSize: 13, color: "#4b5563" }}>
+                  Iscriviti al calendario delle scadenze su Mac o iPhone per ricevere
+                  automaticamente ogni aggiornamento. Su <b>Mac</b> apri l'app Calendario e scegli
+                  <i>File → Nuova iscrizione al calendario...</i>; su <b>iPhone</b> vai in
+                  <i>Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario
+                  sottoscritto</i> e incolla il link qui sotto.
+                </p>
+                <div
+                  style={{
+                    margin: "12px 0",
+                    padding: "10px 12px",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    fontFamily: "SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                    fontSize: 13,
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {calendarFeedUrl}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button onClick={copyCalendarLink} style={{ ...btn, background: "#0f766e" }}>
+                    Copia link
+                  </button>
+                  {calendarSubscribeUrl && (
+                    <a
+                      href={calendarSubscribeUrl}
+                      style={{ ...btn, display: "inline-block", textDecoration: "none" }}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Apri in Calendario
+                    </a>
+                  )}
+                  {calendarCopyStatus && (
+                    <span style={{ fontSize: 12, color: "#047857" }}>{calendarCopyStatus}</span>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 12 }}>
+                  Se utilizzi il gestionale in rete locale, assicurati che l'indirizzo sopra sia raggiungibile
+                  anche da iPhone e Mac (es. sostituendo <code>localhost</code> con l'indirizzo IP del computer).
+                </p>
               </div>
             </>
           )}
@@ -662,6 +1033,39 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per numero, oggetto o cliente"
+                    value={caseQuery}
+                    onChange={(e) => setCaseQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    Stato:
+                    <select
+                      value={caseStatusFilter}
+                      onChange={(e) => setCaseStatusFilter(e.target.value)}
+                      style={{ marginLeft: 6, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
+                    >
+                      <option value="all">Tutte</option>
+                      <option value="aperta">Aperte</option>
+                      <option value="chiusa">Chiuse</option>
+                    </select>
+                  </label>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredCases.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -675,7 +1079,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cases.map((c) => (
+                    {filteredCases.map((c) => (
                       <tr
                         key={c.id}
                         style={{ borderBottom: "1px solid #e5e7eb", cursor: "pointer" }}
@@ -707,7 +1111,7 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {cases.length === 0 && (
+                    {filteredCases.length === 0 && (
                       <tr>
                         <td colSpan="7">Nessuna pratica</td>
                       </tr>
@@ -874,6 +1278,27 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per numero, cliente o pratica"
+                    value={invoiceQuery}
+                    onChange={(e) => setInvoiceQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredInvoices.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -886,7 +1311,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((inv) => (
+                    {filteredInvoices.map((inv) => (
                       <tr key={inv.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                         <td>{inv.number}</td>
                         <td>{inv.date}</td>
@@ -905,7 +1330,7 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {invoices.length === 0 && (
+                    {filteredInvoices.length === 0 && (
                       <tr>
                         <td colSpan="6">Nessuna fattura</td>
                       </tr>
@@ -926,6 +1351,40 @@ function App() {
                 </button>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per descrizione o pratica"
+                    value={deadlineQuery}
+                    onChange={(e) => setDeadlineQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    Tipo:
+                    <select
+                      value={deadlineTypeFilter}
+                      onChange={(e) => setDeadlineTypeFilter(e.target.value)}
+                      style={{ marginLeft: 6, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
+                    >
+                      <option value="all">Tutti</option>
+                      <option value="udienza">Udienze</option>
+                      <option value="scadenza">Scadenze</option>
+                      <option value="termine">Termini</option>
+                    </select>
+                  </label>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredDeadlines.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -937,8 +1396,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {deadlines.map((d) => {
-                      const cas = cases.find((c) => c.id === d.caseId);
+                    {filteredDeadlines.map((d) => {
+                      const cas = casesById.get(d.caseId);
                       return (
                         <tr key={d.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                           <td>{d.date}</td>
@@ -952,7 +1411,7 @@ function App() {
                         </tr>
                       );
                     })}
-                    {deadlines.length === 0 && (
+                    {filteredDeadlines.length === 0 && (
                       <tr>
                         <td colSpan="5">Nessuna scadenza</td>
                       </tr>
@@ -1376,18 +1835,26 @@ function Modal({ children, onClose, title }) {
 function StudioForm({ studio, onSaved }) {
   const [form, setForm] = useState(studio);
 
+  useEffect(() => {
+    setForm(studio);
+  }, [studio]);
+
   const change = (k, v) => {
     setForm({ ...form, [k]: v });
   };
 
   const save = async (e) => {
     e.preventDefault();
-    await fetch(`${API_BASE}/studio`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    if (onSaved) onSaved();
+    try {
+      await fetchJson(`${API_BASE}/studio`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      if (onSaved) onSaved();
+    } catch (err) {
+      alert(`Errore durante il salvataggio: ${err?.message || "riprovare"}`);
+    }
   };
 
   return (
@@ -1476,6 +1943,54 @@ function StudioForm({ studio, onSaved }) {
       </button>
     </form>
   );
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  if (!res.ok) {
+    let message = text.trim();
+    if (!message) {
+      message = `Errore ${res.status}`;
+    } else {
+      try {
+        const data = JSON.parse(message);
+        if (data && typeof data === "object") {
+          if (data.message) {
+            message = data.message;
+          } else {
+            message = JSON.stringify(data);
+          }
+        }
+      } catch (err) {
+        // testo non JSON, mantengo message
+      }
+    }
+    throw new Error(message);
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch (err) {
+    return trimmed;
+  }
+}
+
+function normalizeText(value) {
+  if (value === null || value === undefined) return "";
+  return value
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 // helper
