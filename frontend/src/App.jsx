@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 const API_BASE = "/api";
 
 // Stili base
@@ -30,6 +30,12 @@ const btn = {
   borderRadius: 6,
   cursor: "pointer"
 };
+const searchInput = {
+  padding: "6px 10px",
+  borderRadius: 6,
+  border: "1px solid #d1d5db",
+  minWidth: 220
+};
 const card = {
   background: "#fff",
   borderRadius: 10,
@@ -46,12 +52,24 @@ const statusColor = (t) => {
   return "#e0f2fe"; // azzurrino per scadenza
 };
 
+const guardianStatusColor = (status) => {
+  if (!status) return "#e5e7eb";
+  const value = status.toLowerCase();
+  if (value === "attivo") return "#bbf7d0";
+  if (value === "chiuso" || value === "archiviato") return "#fbcfe8";
+  return "#e0e7ff";
+};
+
 function App() {
   // auth
   const [user, setUser] = useState(null);
   const [loginUser, setLoginUser] = useState("admin");
   const [loginPass, setLoginPass] = useState("admin");
   const [loginError, setLoginError] = useState("");
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   // vista corrente
   const [view, setView] = useState("dashboard");
@@ -62,22 +80,46 @@ function App() {
   const [cases, setCases] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [guardianships, setGuardianships] = useState([]);
 
   // dashboard
   const [dashboard, setDashboard] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [monthly, setMonthly] = useState(null);
 
+  // filtri
+  const [clientQuery, setClientQuery] = useState("");
+  const [caseQuery, setCaseQuery] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("all");
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [deadlineQuery, setDeadlineQuery] = useState("");
+  const [deadlineTypeFilter, setDeadlineTypeFilter] = useState("all");
+  const [guardianQuery, setGuardianQuery] = useState("");
+
   // modali
   const [showNewClient, setShowNewClient] = useState(false);
   const [showNewCase, setShowNewCase] = useState(false);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewDeadline, setShowNewDeadline] = useState(false);
+  const [showGuardianModal, setShowGuardianModal] = useState(false);
+  const [editingGuardian, setEditingGuardian] = useState(null);
 
   // dettaglio pratica
   const [selectedCase, setSelectedCase] = useState(null);
   const [caseLogs, setCaseLogs] = useState([]);
   const [newCaseNote, setNewCaseNote] = useState("");
+  const [selectedGuardian, setSelectedGuardian] = useState(null);
+  const [guardianDetailTab, setGuardianDetailTab] = useState("overview");
+  const [guardianDetailLoading, setGuardianDetailLoading] = useState(false);
+  const [guardianEntryModal, setGuardianEntryModal] = useState(null);
+  const guardianTabs = [
+    { id: "overview", label: "Scheda" },
+    { id: "documents", label: "Documenti" },
+    { id: "inventory", label: "Inventario" },
+    { id: "finance", label: "Entrate / Uscite" },
+    { id: "reports", label: "Rendiconti" },
+    { id: "filings", label: "Depositi telematici" }
+  ];
 
   // modale modifica scadenza (da calendario o lista)
   const [editDeadline, setEditDeadline] = useState(null);
@@ -89,38 +131,240 @@ function App() {
   // calendario: anno/mese navigabili
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth()); // 0-11
+  const [calendarCopyStatus, setCalendarCopyStatus] = useState("");
+  const calendarCopyTimeout = useRef(null);
+
+  function applyGuardianUpdate(guardianData, options = {}) {
+    if (!guardianData || !guardianData.id) return;
+    setGuardianships((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      const index = list.findIndex((item) => item.id === guardianData.id);
+      if (index === -1) {
+        list.push(guardianData);
+      } else {
+        list[index] = guardianData;
+      }
+      return list;
+    });
+    setSelectedGuardian((prev) => {
+      if (options.select) return guardianData;
+      if (prev && prev.id === guardianData.id) {
+        return guardianData;
+      }
+      return prev;
+    });
+    if (options.select) {
+      setGuardianDetailTab("overview");
+    }
+  }
+
+  const casesById = useMemo(() => {
+    const map = new Map();
+    cases.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [cases]);
+
+  const filteredClients = useMemo(() => {
+    const query = normalizeText(clientQuery);
+    if (!query) return clients;
+    return clients.filter((cl) =>
+      [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [clients, clientQuery]);
+
+  const filteredCases = useMemo(() => {
+    const query = normalizeText(caseQuery);
+    return cases.filter((c) => {
+      if (caseStatusFilter !== "all" && normalizeText(c.status) !== normalizeText(caseStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      return [c.number, c.subject, c.clientName, c.caseType, c.proceedingType, c.status]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [cases, caseQuery, caseStatusFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = normalizeText(invoiceQuery);
+    if (!query) return invoices;
+    return invoices.filter((inv) =>
+      [inv.number, inv.clientName, inv.caseNumber, inv.date]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [invoices, invoiceQuery]);
+
+  const filteredDeadlines = useMemo(() => {
+    const query = normalizeText(deadlineQuery);
+    return deadlines.filter((d) => {
+      if (deadlineTypeFilter !== "all" && normalizeText(d.type) !== normalizeText(deadlineTypeFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      const relatedCase = casesById.get(d.caseId);
+      return [d.date, d.type, d.description, relatedCase ? relatedCase.subject : "", relatedCase ? relatedCase.number : ""]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
+
+  const filteredGuardianships = useMemo(() => {
+    const items = [...guardianships].sort((a, b) =>
+      String(a.fullName || "").localeCompare(String(b.fullName || ""), "it", { sensitivity: "base" })
+    );
+    const query = normalizeText(guardianQuery);
+    if (!query) return items;
+    return items.filter((g) =>
+      [g.fullName, g.fiscalCode, g.judge, g.court, g.status, g.reportingFrequency, g.supportLevel]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [guardianships, guardianQuery]);
+
+  const selectedGuardianFinancial =
+    selectedGuardian && selectedGuardian.financialSummary ? selectedGuardian.financialSummary : null;
+  const selectedGuardianAssets =
+    selectedGuardian && selectedGuardian.assetSummary ? selectedGuardian.assetSummary : null;
+  const selectedGuardianReporting =
+    selectedGuardian && selectedGuardian.reportingSummary ? selectedGuardian.reportingSummary : null;
+  const selectedGuardianDocumentsSummary =
+    selectedGuardian && selectedGuardian.documentsSummary ? selectedGuardian.documentsSummary : null;
+  const selectedGuardianFilingsSummary =
+    selectedGuardian && selectedGuardian.filingsSummary ? selectedGuardian.filingsSummary : null;
+
+  const calendarFeedUrl = useMemo(() => {
+    if (typeof window === "undefined") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    const origin = window.location && window.location.origin ? window.location.origin : "";
+    if (!origin || origin === "null") {
+      return `${API_BASE}/deadlines/ics`;
+    }
+    return `${origin}${API_BASE}/deadlines/ics`;
+  }, []);
+
+  const calendarSubscribeUrl = useMemo(() => {
+    if (!calendarFeedUrl) return "";
+    try {
+      const url = new URL(calendarFeedUrl, typeof window !== "undefined" ? window.location.href : undefined);
+      url.protocol = "webcal:";
+      return url.toString();
+    } catch (err) {
+      if (calendarFeedUrl.startsWith("https://")) {
+        return `webcal://${calendarFeedUrl.slice("https://".length)}`;
+      }
+      if (calendarFeedUrl.startsWith("http://")) {
+        return `webcal://${calendarFeedUrl.slice("http://".length)}`;
+      }
+      return calendarFeedUrl;
+    }
+  }, [calendarFeedUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (calendarCopyTimeout.current) {
+        clearTimeout(calendarCopyTimeout.current);
+      }
+    };
+  }, []);
+
+  const copyCalendarLink = async () => {
+    if (!calendarFeedUrl) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(calendarFeedUrl);
+        setCalendarCopyStatus("Link copiato negli appunti.");
+      } else {
+        window.prompt("Copia il link del calendario", calendarFeedUrl);
+        setCalendarCopyStatus("Copia il link mostrato e incollalo in Calendario Apple.");
+      }
+    } catch (err) {
+      setCalendarCopyStatus("Copia non riuscita, copia manualmente il link sottostante.");
+    }
+    if (calendarCopyTimeout.current) {
+      clearTimeout(calendarCopyTimeout.current);
+    }
+    calendarCopyTimeout.current = setTimeout(() => {
+      setCalendarCopyStatus("");
+    }, 4000);
+  };
 
   // caricamento di tutti i dati
-  async function loadAll() {
-    const [
-      resStudio,
-      resClients,
-      resCases,
-      resDeadlines,
-      resInvoices,
-      resDash,
-      resUpcoming,
-      resMonthly
-    ] = await Promise.all([
-      fetch(`${API_BASE}/studio`),
-      fetch(`${API_BASE}/clients`),
-      fetch(`${API_BASE}/cases`),
-      fetch(`${API_BASE}/deadlines`),
-      fetch(`${API_BASE}/invoices`),
-      fetch(`${API_BASE}/reports/dashboard`),
-      fetch(`${API_BASE}/reports/upcoming-deadlines`),
-      fetch(`${API_BASE}/reports/monthly`)
-    ]);
+  async function loadAll(opts = {}) {
+    const guardianIdToRefresh =
+      opts.guardianId || (selectedGuardian ? selectedGuardian.id : null);
+    const forceSelectGuardian = opts.selectGuardian === true;
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const [
+        studioData,
+        clientsData,
+        casesData,
+        guardianshipsData,
+        deadlinesData,
+        invoicesData,
+        dashboardData,
+        upcomingData,
+        monthlyData
+      ] = await Promise.all([
+        fetchJson(`${API_BASE}/studio`),
+        fetchJson(`${API_BASE}/clients`),
+        fetchJson(`${API_BASE}/cases`),
+        fetchJson(`${API_BASE}/guardianships`),
+        fetchJson(`${API_BASE}/deadlines`),
+        fetchJson(`${API_BASE}/invoices`),
+        fetchJson(`${API_BASE}/reports/dashboard`),
+        fetchJson(`${API_BASE}/reports/upcoming-deadlines`),
+        fetchJson(`${API_BASE}/reports/monthly`)
+      ]);
 
-    setStudio(await resStudio.json());
-    setClients(await resClients.json());
-    setCases(await resCases.json());
-    setDeadlines(await resDeadlines.json());
-    setInvoices(await resInvoices.json());
-    setDashboard(await resDash.json());
-    setUpcoming(await resUpcoming.json());
-    setMonthly(await resMonthly.json());
+      setStudio(studioData);
+      setClients(Array.isArray(clientsData) ? clientsData : []);
+      setCases(Array.isArray(casesData) ? casesData : []);
+      setGuardianships(Array.isArray(guardianshipsData) ? guardianshipsData : []);
+      setDeadlines(Array.isArray(deadlinesData) ? deadlinesData : []);
+      setInvoices(Array.isArray(invoicesData) ? invoicesData : []);
+      setDashboard(dashboardData || null);
+      setUpcoming(Array.isArray(upcomingData) ? upcomingData : []);
+      setMonthly(monthlyData || null);
+      setLastUpdated(new Date());
+
+      if (guardianIdToRefresh) {
+        try {
+          const detail = await fetchJson(`${API_BASE}/guardianships/${guardianIdToRefresh}`);
+          const shouldSelect = forceSelectGuardian || (selectedGuardian && selectedGuardian.id === guardianIdToRefresh);
+          applyGuardianUpdate(detail, { select: shouldSelect });
+        } catch (detailError) {
+          console.error("Errore durante l'aggiornamento del dettaglio amministrato", detailError);
+        }
+      }
+    } catch (err) {
+      console.error("Errore durante il caricamento dei dati", err);
+      setLoadError(err.message || "Impossibile caricare i dati");
+    } finally {
+      setIsLoading(false);
+    }
   }
+
+  const runOrAlert = async (action, errorMessage) => {
+    try {
+      const result = await action();
+      if (result === undefined || result === null) {
+        return true;
+      }
+      return result;
+    } catch (err) {
+      console.error(errorMessage, err);
+      alert(`${errorMessage}${err?.message ? `: ${err.message}` : ""}`);
+      return null;
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -131,18 +375,20 @@ function App() {
   // login
   const doLogin = async (e) => {
     e.preventDefault();
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: loginUser, password: loginPass })
-    });
-    if (!res.ok) {
-      setLoginError("Credenziali non valide");
-      return;
+    try {
+      const data = await fetchJson(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUser, password: loginPass })
+      });
+      if (!data || !data.user) {
+        throw new Error("Credenziali non valide");
+      }
+      setUser(data.user);
+      setLoginError("");
+    } catch (err) {
+      setLoginError(err.message || "Credenziali non valide");
     }
-    const data = await res.json();
-    setUser(data.user);
-    setLoginError("");
   };
 
   // CLIENTI ---------------------------------------------------
@@ -159,11 +405,16 @@ function App() {
       address: form.address.value,
       notes: form.notes.value
     };
-    await fetch(`${API_BASE}/clients`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/clients`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione del cliente"
+    );
+    if (!success) return;
     setShowNewClient(false);
     await loadAll();
   };
@@ -171,22 +422,28 @@ function App() {
   const editClient = async (cl) => {
     const name = window.prompt("Nome cliente", cl.name);
     if (!name) return;
-    await fetch(`${API_BASE}/clients/${cl.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    await loadAll();
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/clients/${cl.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        }),
+      "Errore durante l'aggiornamento del cliente"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   const deleteClient = async (cl) => {
     if (!window.confirm("Eliminare questo cliente?")) return;
-    const res = await fetch(`${API_BASE}/clients/${cl.id}`, { method: "DELETE" });
-    if (res.ok) {
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/clients/${cl.id}`, { method: "DELETE" }),
+      "Impossibile eliminare il cliente (ha pratiche o fatture collegate?)"
+    );
+    if (success) {
       await loadAll();
-    } else {
-      const err = await res.json();
-      alert(err.message || "Impossibile eliminare il cliente (ha pratiche o fatture collegate?)");
     }
   };
 
@@ -203,23 +460,33 @@ function App() {
       rgNumber: form.rgNumber.value,
       status: "aperta"
     };
-    await fetch(`${API_BASE}/cases`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della pratica"
+    );
+    if (!success) return;
     setShowNewCase(false);
     await loadAll();
   };
 
   const openCase = async (c) => {
-    const [resCase, resLogs] = await Promise.all([
-      fetch(`${API_BASE}/cases/${c.id}`),
-      fetch(`${API_BASE}/cases/${c.id}/logs`)
-    ]);
-    setSelectedCase(await resCase.json());
-    setCaseLogs(await resLogs.json());
-    setView("case-detail");
+    try {
+      const [caseData, logsData] = await Promise.all([
+        fetchJson(`${API_BASE}/cases/${c.id}`),
+        fetchJson(`${API_BASE}/cases/${c.id}/logs`)
+      ]);
+      setSelectedCase(caseData);
+      setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      setView("case-detail");
+    } catch (err) {
+      console.error("Impossibile aprire la pratica", err);
+      alert(`Impossibile aprire la pratica: ${err?.message || "Errore sconosciuto"}`);
+    }
   };
 
   const editCase = async (c) => {
@@ -227,33 +494,53 @@ function App() {
     if (!subject) return;
     const proceedingType = window.prompt("Procedimento (giudiziale/stragiudiziale):", c.proceedingType || "stragiudiziale");
     const status = window.prompt("Stato (aperta/chiusa):", c.status || "aperta");
-    await fetch(`${API_BASE}/cases/${c.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, status, proceedingType })
-    });
-    await loadAll();
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject, status, proceedingType })
+        }),
+      "Errore durante l'aggiornamento della pratica"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   const deleteCase = async (c) => {
     if (!window.confirm("Eliminare la pratica e le scadenze collegate?")) return;
-    await fetch(`${API_BASE}/cases/${c.id}`, { method: "DELETE" });
-    await loadAll();
-    setSelectedCase(null);
-    setView("cases");
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/cases/${c.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della pratica"
+    );
+    if (success) {
+      await loadAll();
+      setSelectedCase(null);
+      setView("cases");
+    }
   };
 
   // CRONOSTORIA - nota manuale
   const addManualNote = async () => {
     if (!selectedCase || !newCaseNote.trim()) return;
-    await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ detail: newCaseNote })
-    });
-    const resLogs = await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`);
-    setCaseLogs(await resLogs.json());
-    setNewCaseNote("");
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ detail: newCaseNote })
+        }),
+      "Errore durante l'inserimento della nota"
+    );
+    if (!success) return;
+    try {
+      const logsData = await fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`);
+      setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      setNewCaseNote("");
+    } catch (err) {
+      console.error("Errore durante il ricaricamento delle note", err);
+    }
   };
 
   // SCADENZE / UDIENZE ------------------------------------------
@@ -270,30 +557,49 @@ function App() {
       description: form.description.value,
       type: form.type.value
     };
-    await fetch(`${API_BASE}/cases/${caseId}/deadlines`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/cases/${caseId}/deadlines`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della scadenza"
+    );
+    if (!success) return;
     setShowNewDeadline(false);
     await loadAll();
     // se sono nel dettaglio pratica, la ricarico
     if (selectedCase && selectedCase.id === caseId) {
-      const resCase = await fetch(`${API_BASE}/cases/${caseId}`);
-      setSelectedCase(await resCase.json());
+      try {
+        const caseData = await fetchJson(`${API_BASE}/cases/${caseId}`);
+        setSelectedCase(caseData);
+      } catch (err) {
+        console.error("Errore durante il ricaricamento della pratica", err);
+      }
     }
   };
 
   const deleteDeadline = async (d) => {
     if (!window.confirm("Eliminare questa scadenza/udienza?")) return;
-    await fetch(`${API_BASE}/deadlines/${d.id}`, { method: "DELETE" });
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/deadlines/${d.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della scadenza"
+    );
+    if (!success) return;
     await loadAll();
     // se è della pratica che sto vedendo, aggiorno
     if (selectedCase && d.caseId === selectedCase.id) {
-      const resCase = await fetch(`${API_BASE}/cases/${selectedCase.id}`);
-      setSelectedCase(await resCase.json());
-      const resLogs = await fetch(`${API_BASE}/cases/${selectedCase.id}/logs`);
-      setCaseLogs(await resLogs.json());
+      try {
+        const [caseData, logsData] = await Promise.all([
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}`),
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`)
+        ]);
+        setSelectedCase(caseData);
+        setCaseLogs(Array.isArray(logsData) ? logsData : []);
+      } catch (err) {
+        console.error("Errore durante l'aggiornamento della pratica", err);
+      }
     }
     setEditDeadline(null);
   };
@@ -306,13 +612,360 @@ function App() {
       description: form.description.value,
       type: form.type.value
     };
-    await fetch(`${API_BASE}/deadlines/${editDeadline.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/deadlines/${editDeadline.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante l'aggiornamento della scadenza"
+    );
+    if (!success) return;
     setEditDeadline(null);
     await loadAll();
+  };
+
+  // AMMINISTRATI DI SOSTEGNO -----------------------------------
+  const openGuardian = async (g) => {
+    if (!g || !g.id) return;
+    if (view !== "guardianships") {
+      setView("guardianships");
+    }
+    setGuardianDetailLoading(true);
+    try {
+      const detail = await runOrAlert(
+        () => fetchJson(`${API_BASE}/guardianships/${g.id}`),
+        "Errore durante il caricamento della scheda AdS"
+      );
+      if (detail) {
+        applyGuardianUpdate(detail, { select: true });
+      }
+    } finally {
+      setGuardianDetailLoading(false);
+    }
+  };
+
+  const startNewGuardian = () => {
+    setEditingGuardian(null);
+    setShowGuardianModal(true);
+  };
+
+  const startEditGuardian = (g) => {
+    setEditingGuardian(g);
+    setShowGuardianModal(true);
+  };
+
+  const closeGuardianModal = () => {
+    setShowGuardianModal(false);
+    setEditingGuardian(null);
+  };
+
+  const openGuardianEntryModal = (type, item = null) => {
+    setGuardianEntryModal({ type, item });
+  };
+
+  const closeGuardianEntryModal = () => {
+    setGuardianEntryModal(null);
+  };
+
+  const submitGuardian = async (e) => {
+    e.preventDefault();
+    const editing = editingGuardian;
+    const form = e.target;
+    const payload = {
+      fullName: form.fullName.value.trim(),
+      birthDate: form.birthDate.value,
+      fiscalCode: form.fiscalCode.value.trim(),
+      residence: form.residence.value.trim(),
+      supportLevel: form.supportLevel.value.trim(),
+      court: form.court.value.trim(),
+      judge: form.judge.value.trim(),
+      decreeDate: form.decreeDate.value,
+      reportingFrequency: form.reportingFrequency.value.trim(),
+      nextReportDue: form.nextReportDue.value,
+      lastReportSent: form.lastReportSent.value,
+      income: form.income.value.trim(),
+      healthNotes: form.healthNotes.value.trim(),
+      socialServicesContact: form.socialServicesContact.value.trim(),
+      familyContacts: form.familyContacts.value.trim(),
+      notes: form.notes.value.trim(),
+      status: form.status.value
+    };
+    const url = editing ? `${API_BASE}/guardianships/${editing.id}` : `${API_BASE}/guardianships`;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento dell'amministrato" : "Errore durante la creazione dell'amministrato"
+    );
+    if (!result) return;
+    setShowGuardianModal(false);
+    setEditingGuardian(null);
+    const shouldSelect = !editing || (selectedGuardian && selectedGuardian.id === editing.id);
+    applyGuardianUpdate(result, { select: shouldSelect });
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardian = async (g) => {
+    if (!window.confirm("Eliminare questo amministrato?")) return;
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/guardianships/${g.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione dell'amministrato"
+    );
+    if (!success) return;
+    if (selectedGuardian && selectedGuardian.id === g.id) {
+      setSelectedGuardian(null);
+    }
+    setGuardianships((prev) => prev.filter((item) => item.id !== g.id));
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianDocument = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "document" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      title: form.title.value.trim(),
+      category: form.category.value.trim(),
+      date: form.date.value,
+      reference: form.reference.value.trim(),
+      link: form.link.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/documents`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del documento" : "Errore durante l'aggiunta del documento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianDocument = async (doc) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo documento dall'archivio?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/documents/${doc.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del documento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitInventoryItem = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "inventory" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const quantityValue = Number(form.quantity.value || 1);
+    const totalValue = Number(form.value.value || 0);
+    const payload = {
+      label: form.label.value.trim(),
+      category: form.category.value.trim(),
+      location: form.location.value.trim(),
+      quantity: Number.isFinite(quantityValue) ? quantityValue : 1,
+      value: Number.isFinite(totalValue) ? totalValue : 0,
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/inventory`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento dell'inventario" : "Errore durante l'inserimento del bene"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteInventoryItem = async (item) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Rimuovere questa voce dall'inventario?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/inventory/${item.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante la rimozione del bene"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianMovement = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "movement" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const amountValue = Number(form.amount.value);
+    if (!Number.isFinite(amountValue)) {
+      alert("Inserisci un importo numerico valido.");
+      return;
+    }
+    const payload = {
+      type: form.type.value,
+      amount: amountValue,
+      date: form.date.value,
+      category: form.category.value.trim(),
+      description: form.description.value.trim(),
+      reference: form.reference.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/movements`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del movimento" : "Errore durante l'inserimento del movimento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianMovement = async (movement) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questa movimentazione economica?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/movements/${movement.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del movimento"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianReport = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "report" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      title: form.title.value.trim(),
+      periodStart: form.periodStart.value,
+      periodEnd: form.periodEnd.value,
+      deliveredAt: form.deliveredAt.value,
+      status: form.status.value,
+      protocol: form.protocol.value.trim(),
+      attachment: form.attachment.value.trim(),
+      summary: form.summary.value,
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/reports`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del rendiconto" : "Errore durante la registrazione del rendiconto"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianReport = async (report) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo rendiconto?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/reports/${report.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del rendiconto"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
+  };
+
+  const submitGuardianFiling = async (e) => {
+    e.preventDefault();
+    if (!selectedGuardian) return;
+    const editing = guardianEntryModal && guardianEntryModal.type === "filing" ? guardianEntryModal.item : null;
+    const form = e.target;
+    const payload = {
+      subject: form.subject.value.trim(),
+      date: form.date.value,
+      channel: form.channel.value.trim(),
+      registry: form.registry.value.trim(),
+      protocol: form.protocol.value.trim(),
+      outcome: form.outcome.value.trim(),
+      attachment: form.attachment.value.trim(),
+      notes: form.notes.value
+    };
+    const endpoint = `${API_BASE}/guardianships/${selectedGuardian.id}/filings`;
+    const url = editing ? `${endpoint}/${editing.id}` : endpoint;
+    const method = editing ? "PUT" : "POST";
+    const result = await runOrAlert(
+      () =>
+        fetchJson(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      editing ? "Errore durante l'aggiornamento del deposito" : "Errore durante la registrazione del deposito"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setGuardianEntryModal(null);
+    setLastUpdated(new Date());
+  };
+
+  const deleteGuardianFiling = async (filing) => {
+    if (!selectedGuardian) return;
+    if (!window.confirm("Eliminare questo deposito telematico?")) return;
+    const result = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/guardianships/${selectedGuardian.id}/filings/${filing.id}`, {
+          method: "DELETE"
+        }),
+      "Errore durante l'eliminazione del deposito"
+    );
+    if (!result) return;
+    applyGuardianUpdate(result, { select: true });
+    setLastUpdated(new Date());
   };
 
   // FATTURE ---------------------------------------------------
@@ -328,19 +981,29 @@ function App() {
         ? [{ description: form.desc.value, amount: Number(form.amount.value || 0) }]
         : []
     };
-    await fetch(`${API_BASE}/invoices`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const success = await runOrAlert(
+      () =>
+        fetchJson(`${API_BASE}/invoices`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }),
+      "Errore durante la creazione della fattura"
+    );
+    if (!success) return;
     setShowNewInvoice(false);
     await loadAll();
   };
 
   const deleteInvoice = async (inv) => {
     if (!window.confirm("Eliminare questa fattura?")) return;
-    await fetch(`${API_BASE}/invoices/${inv.id}`, { method: "DELETE" });
-    await loadAll();
+    const success = await runOrAlert(
+      () => fetchJson(`${API_BASE}/invoices/${inv.id}`, { method: "DELETE" }),
+      "Errore durante l'eliminazione della fattura"
+    );
+    if (success) {
+      await loadAll();
+    }
   };
 
   // EXPORT -----------------------------------------------------
@@ -461,13 +1124,36 @@ function App() {
       <header style={topbarStyle}>
         <div>
           <b>{studio ? studio.name : "Studio Legale"}</b>
-        </div>
-        <div>
           {studio && (
-            <span style={{ fontSize: 12, marginRight: 16 }}>
-              {studio.email} · {studio.phone}
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              {studio.email}
+              {studio.phone ? ` · ${studio.phone}` : ""}
+            </div>
+          )}
+          {lastUpdated && (
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+              Ultimo aggiornamento: {formatDateTime(lastUpdated)}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {loadError && (
+            <span style={{ fontSize: 12, color: "#fbbf24" }}>
+              {loadError}
             </span>
           )}
+          <button
+            onClick={loadAll}
+            disabled={isLoading}
+            style={{
+              ...btn,
+              background: "#1f2937",
+              opacity: isLoading ? 0.6 : 1,
+              cursor: isLoading ? "default" : "pointer"
+            }}
+          >
+            {isLoading ? "Aggiornamento..." : "Aggiorna"}
+          </button>
           <button onClick={() => setUser(null)} style={{ ...btn, background: "#ef4444" }}>
             Esci
           </button>
@@ -482,13 +1168,16 @@ function App() {
           <button onClick={() => setView("dashboard")} style={navBtn(view === "dashboard")}>
             Dashboard
           </button>
-          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}>
+          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}> 
             Clienti
           </button>
-          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}>
+          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}> 
             Pratiche
           </button>
-          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}>
+          <button onClick={() => setView("guardianships")} style={navBtn(view === "guardianships")}> 
+            Amministrati (AdS)
+          </button>
+          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}> 
             Fatture
           </button>
           <button onClick={() => setView("deadlines")} style={navBtn(view === "deadlines")}>
@@ -504,6 +1193,49 @@ function App() {
 
         {/* CONTENT */}
         <main style={{ flex: 1, padding: 20, overflowY: "auto" }}>
+          {isLoading && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: "#dbeafe",
+                color: "#1d4ed8",
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 13
+              }}
+            >
+              ⏳ Aggiornamento dati in corso...
+            </div>
+          )}
+          {loadError && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: "#fee2e2",
+                color: "#b91c1c",
+                padding: "10px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap"
+              }}
+            >
+              <span>⚠️ {loadError}</span>
+              <button
+                onClick={loadAll}
+                style={{
+                  ...btn,
+                  background: "#991b1b",
+                  padding: "4px 10px",
+                  fontSize: 12
+                }}
+              >
+                Riprova
+              </button>
+            </div>
+          )}
           {/* DASHBOARD */}
           {view === "dashboard" && (
             <>
@@ -612,6 +1344,35 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per nome, email o telefono"
+                    value={clientQuery}
+                    onChange={(e) => setClientQuery(e.target.value)}
+                    style={searchInput}
+                  />
+                  {clientQuery && (
+                    <button
+                      onClick={() => setClientQuery("")}
+                      style={{ ...btn, background: "#6b7280", padding: "6px 10px" }}
+                    >
+                      Pulisci filtro
+                    </button>
+                  )}
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredClients.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ textAlign: "left" }}>
@@ -622,7 +1383,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {clients.map((cl) => (
+                    {filteredClients.map((cl) => (
                       <tr key={cl.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                         <td>{cl.name}</td>
                         <td>{cl.email}</td>
@@ -633,13 +1394,1029 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {clients.length === 0 && (
+                    {filteredClients.length === 0 && (
                       <tr>
                         <td colSpan="4">Nessun cliente</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div style={card}>
+                <h3>Sincronizza con Calendario Apple</h3>
+                <p style={{ fontSize: 13, color: "#4b5563" }}>
+                  Iscriviti al calendario delle scadenze su Mac o iPhone per ricevere
+                  automaticamente ogni aggiornamento. Su <b>Mac</b> apri l'app Calendario e scegli
+                  <i>File → Nuova iscrizione al calendario...</i>; su <b>iPhone</b> vai in
+                  <i>Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario
+                  sottoscritto</i> e incolla il link qui sotto.
+                </p>
+                <div
+                  style={{
+                    margin: "12px 0",
+                    padding: "10px 12px",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    fontFamily: "SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                    fontSize: 13,
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {calendarFeedUrl}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button onClick={copyCalendarLink} style={{ ...btn, background: "#0f766e" }}>
+                    Copia link
+                  </button>
+                  {calendarSubscribeUrl && (
+                    <a
+                      href={calendarSubscribeUrl}
+                      style={{ ...btn, display: "inline-block", textDecoration: "none" }}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Apri in Calendario
+                    </a>
+                  )}
+                  {calendarCopyStatus && (
+                    <span style={{ fontSize: 12, color: "#047857" }}>{calendarCopyStatus}</span>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 12 }}>
+                  Se utilizzi il gestionale in rete locale, assicurati che l'indirizzo sopra sia raggiungibile
+                  anche da iPhone e Mac (es. sostituendo <code>localhost</code> con l'indirizzo IP del computer).
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* AMMINISTRATI DI SOSTEGNO */}
+          {view === "guardianships" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h1>Amministrati di sostegno</h1>
+                <button style={btn} onClick={startNewGuardian}>
+                  + Nuovo amministrato
+                </button>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.05fr 0.95fr",
+                  gap: 20,
+                  alignItems: "start",
+                  marginTop: 16
+                }}
+              >
+                <div style={card}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 12,
+                      alignItems: "center",
+                      marginBottom: 12
+                    }}
+                  >
+                    <input
+                      type="search"
+                      placeholder="Cerca per nome, giudice o tribunale"
+                      value={guardianQuery}
+                      onChange={(e) => setGuardianQuery(e.target.value)}
+                      style={{ ...searchInput, minWidth: 260 }}
+                    />
+                    {guardianQuery && (
+                      <button
+                        onClick={() => setGuardianQuery("")}
+                        style={{ ...btn, background: "#6b7280", padding: "6px 10px" }}
+                      >
+                        Pulisci filtro
+                      </button>
+                    )}
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                      {filteredGuardianships.length} risultati
+                    </span>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th>Amministrato</th>
+                        <th>Stato</th>
+                        <th>Prossimo rendiconto</th>
+                        <th>Saldo</th>
+                        <th>Giudice / Tribunale</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredGuardianships.map((g) => {
+                        const isSelected = selectedGuardian && selectedGuardian.id === g.id;
+                        const balanceValue =
+                          g.financialSummary && typeof g.financialSummary.balance === "number"
+                            ? g.financialSummary.balance
+                            : null;
+                        const balanceColor = balanceValue > 0 ? "#047857" : balanceValue < 0 ? "#b91c1c" : "#374151";
+                        return (
+                          <tr
+                            key={g.id}
+                            onClick={() => openGuardian(g)}
+                            style={{
+                              borderBottom: "1px solid #e5e7eb",
+                              cursor: "pointer",
+                              background: isSelected ? "#eff6ff" : "transparent"
+                            }}
+                          >
+                            <td style={{ padding: "6px 4px" }}>
+                              <div style={{ fontWeight: 600 }}>{g.fullName}</div>
+                              {g.supportLevel && (
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>{g.supportLevel}</div>
+                              )}
+                            </td>
+                            <td style={{ padding: "6px 4px" }}>
+                              <span
+                                style={{
+                                  background: guardianStatusColor(g.status),
+                                  padding: "2px 8px",
+                                  borderRadius: 999,
+                                  fontSize: 12,
+                                  textTransform: "capitalize"
+                                }}
+                              >
+                                {g.status || "n/d"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
+                              {g.nextReportDue ? formatDateValue(g.nextReportDue) : "—"}
+                            </td>
+                            <td style={{ padding: "6px 4px", fontSize: 13, textAlign: "right", color: balanceColor }}>
+                              {typeof balanceValue === "number" ? euro(balanceValue) : "—"}
+                            </td>
+                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
+                              <div>{g.judge || "—"}</div>
+                              {g.court && <div style={{ fontSize: 11, color: "#6b7280" }}>{g.court}</div>}
+                            </td>
+                            <td style={{ padding: "6px 4px", minWidth: 70 }}>
+                              <button
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  startEditGuardian(g);
+                                }}
+                              >
+                                ✏️
+                              </button>{" "}
+                              <button
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  deleteGuardian(g);
+                                }}
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredGuardianships.length === 0 && (
+                        <tr>
+                          <td colSpan="5" style={{ padding: 12 }}>
+                            Nessun amministrato registrato
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={card}>
+                  {selectedGuardian ? (
+                    <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 12,
+                          flexWrap: "wrap"
+                        }}
+                      >
+                        <div style={{ minWidth: 200 }}>
+                          <h3 style={{ margin: 0 }}>{selectedGuardian.fullName}</h3>
+                          {selectedGuardian.supportLevel && (
+                            <div style={{ fontSize: 13, color: "#4b5563" }}>{selectedGuardian.supportLevel}</div>
+                          )}
+                          <div style={{ fontSize: 12, color: "#6b7280", marginTop: selectedGuardian.supportLevel ? 4 : 0 }}>
+                            Decreto {formatDateValue(selectedGuardian.decreeDate) || "n/d"}
+                            {selectedGuardian.court ? ` · ${selectedGuardian.court}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span
+                            style={{
+                              background: guardianStatusColor(selectedGuardian.status),
+                              padding: "4px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              textTransform: "capitalize"
+                            }}
+                          >
+                            {selectedGuardian.status || "n/d"}
+                          </span>
+                          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>
+                            Ultimo aggiornamento: {formatDateTime(selectedGuardian.updatedAt) || "—"}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                        <button style={btn} onClick={() => startEditGuardian(selectedGuardian)} disabled={guardianDetailLoading}>
+                          Modifica scheda
+                        </button>
+                        <button
+                          style={{ ...btn, background: "#ef4444" }}
+                          onClick={() => deleteGuardian(selectedGuardian)}
+                          disabled={guardianDetailLoading}
+                        >
+                          Elimina
+                        </button>
+                        <button
+                          style={{ ...btn, background: "#1d4ed8" }}
+                          onClick={() => openGuardianEntryModal("document")}
+                          disabled={guardianDetailLoading}
+                        >
+                          + Documento
+                        </button>
+                        <button
+                          style={{ ...btn, background: "#0f766e" }}
+                          onClick={() => openGuardianEntryModal("movement")}
+                          disabled={guardianDetailLoading}
+                        >
+                          + Movimento
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                          gap: 12,
+                          marginTop: 16
+                        }}
+                      >
+                        <div
+                          style={{
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: "10px 12px"
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Documenti archiviati</div>
+                          <div style={{ fontSize: 18, fontWeight: 700 }}>
+                            {selectedGuardianDocumentsSummary?.totalDocuments ??
+                              (selectedGuardian.documents ? selectedGuardian.documents.length : 0)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Scontrini, fatture, istanze e decreti</div>
+                        </div>
+                        <div
+                          style={{
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: "10px 12px"
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Beni inventariati</div>
+                          <div style={{ fontSize: 18, fontWeight: 700 }}>
+                            {selectedGuardianAssets?.totalItems ??
+                              (selectedGuardian.assetInventory ? selectedGuardian.assetInventory.length : 0)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>
+                            Valore stimato {selectedGuardianAssets ? euro(selectedGuardianAssets.totalValue) : "—"}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: "10px 12px"
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Bilancio AdS</div>
+                          <div
+                            style={{
+                              fontSize: 18,
+                              fontWeight: 700,
+                              color: selectedGuardianFinancial
+                                ? selectedGuardianFinancial.balance > 0
+                                  ? "#047857"
+                                  : selectedGuardianFinancial.balance < 0
+                                  ? "#b91c1c"
+                                  : "#111827"
+                                : "#111827"
+                            }}
+                          >
+                            {selectedGuardianFinancial ? euro(selectedGuardianFinancial.balance) : "—"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>
+                            Entrate {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalIncome) : "—"} · Uscite
+                            {" "}
+                            {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalExpense) : "—"}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: "10px 12px"
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Rendiconti</div>
+                          <div style={{ fontSize: 18, fontWeight: 700 }}>
+                            {selectedGuardianReporting
+                              ? `${selectedGuardianReporting.deliveredReports}/${selectedGuardianReporting.totalReports}`
+                              : `${(selectedGuardian.reports || []).filter((r) => ((r.status || "").toLowerCase() === "consegnato")).length}/${selectedGuardian.reports ? selectedGuardian.reports.length : 0}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>
+                            Ultimo invio {selectedGuardianReporting && selectedGuardianReporting.lastDeliveredAt
+                              ? formatDateValue(selectedGuardianReporting.lastDeliveredAt)
+                              : "—"}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: "10px 12px"
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Depositi telematici</div>
+                          <div style={{ fontSize: 18, fontWeight: 700 }}>
+                            {selectedGuardianFilingsSummary?.totalFilings ??
+                              (selectedGuardian.courtFilings ? selectedGuardian.courtFilings.length : 0)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6b7280" }}>Protocolli PEC / PCT monitorati</div>
+                        </div>
+                      </div>
+                      {guardianDetailLoading ? (
+                        <div style={{ marginTop: 20, fontSize: 13, color: "#4b5563" }}>Caricamento dettagli aggiornati...</div>
+                      ) : (
+                        <>
+                          <div style={{ display: "flex", gap: 8, marginTop: 20, flexWrap: "wrap" }}>
+                            {guardianTabs.map((tab) => {
+                              const isActive = guardianDetailTab === tab.id;
+                              return (
+                                <button
+                                  key={tab.id}
+                                  onClick={() => setGuardianDetailTab(tab.id)}
+                                  disabled={isActive}
+                                  style={{
+                                    ...btn,
+                                    padding: "6px 12px",
+                                    background: isActive ? "#2563eb" : "#e5e7eb",
+                                    color: isActive ? "#fff" : "#1f2937",
+                                    cursor: isActive ? "default" : "pointer"
+                                  }}
+                                >
+                                  {tab.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div style={{ marginTop: 16 }}>
+                            {guardianDetailTab === "overview" && (
+                              <div style={{ display: "grid", gap: 16 }}>
+                                <section>
+                                  <h4 style={{ marginBottom: 6 }}>Profilo personale</h4>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                                      gap: 8,
+                                      fontSize: 13
+                                    }}
+                                  >
+                                    <div>
+                                      <b>Data di nascita:</b> {formatDateValue(selectedGuardian.birthDate) || "—"}
+                                    </div>
+                                    <div>
+                                      <b>Codice fiscale:</b> {selectedGuardian.fiscalCode || "—"}
+                                    </div>
+                                    <div>
+                                      <b>Residenza:</b> {selectedGuardian.residence || "—"}
+                                    </div>
+                                  </div>
+                                </section>
+                                <section>
+                                  <h4 style={{ marginBottom: 6 }}>Mandato di tutela</h4>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                                      gap: 8,
+                                      fontSize: 13
+                                    }}
+                                  >
+                                    <div>
+                                      <b>Tribunale:</b> {selectedGuardian.court || "—"}
+                                    </div>
+                                    <div>
+                                      <b>Giudice tutelare:</b> {selectedGuardian.judge || "—"}
+                                    </div>
+                                    <div>
+                                      <b>Decreto:</b> {formatDateValue(selectedGuardian.decreeDate) || "—"}
+                                    </div>
+                                  </div>
+                                  <div style={{ marginTop: 8, fontSize: 13, color: "#4b5563" }}>
+                                    Frequenza rendiconti: <b>{selectedGuardian.reportingFrequency || "—"}</b> · Prossima scadenza {" "}
+                                    <b>{formatDateValue(selectedGuardian.nextReportDue) || "—"}</b>
+                                  </div>
+                                  <div style={{ marginTop: 4, fontSize: 13, color: "#4b5563" }}>
+                                    Ultimo rendiconto inviato: <b>{formatDateValue(selectedGuardian.lastReportSent) || "—"}</b>
+                                  </div>
+                                  {selectedGuardian.income && (
+                                    <div style={{ marginTop: 4, fontSize: 13, color: "#4b5563" }}>
+                                      Entrate e contributi dichiarati: <b>{selectedGuardian.income}</b>
+                                    </div>
+                                  )}
+                                </section>
+                                <section>
+                                  <h4 style={{ marginBottom: 6 }}>Rete di supporto</h4>
+                                  <p style={{ margin: "4px 0", fontSize: 13 }}>
+                                    <b>Servizi sociali:</b> {selectedGuardian.socialServicesContact || "—"}
+                                  </p>
+                                  <p style={{ margin: "4px 0", fontSize: 13 }}>
+                                    <b>Familiari di riferimento:</b>
+                                  </p>
+                                  <div
+                                    style={{
+                                      background: "#f9fafb",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      padding: "8px 10px",
+                                      whiteSpace: "pre-wrap",
+                                      fontSize: 13
+                                    }}
+                                  >
+                                    {selectedGuardian.familyContacts || "—"}
+                                  </div>
+                                </section>
+                                <section>
+                                  <h4 style={{ marginBottom: 6 }}>Situazione sanitaria e note</h4>
+                                  <div
+                                    style={{
+                                      background: "#f9fafb",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      padding: "8px 10px",
+                                      whiteSpace: "pre-wrap",
+                                      fontSize: 13,
+                                      marginBottom: 8
+                                    }}
+                                  >
+                                    {selectedGuardian.healthNotes || "Nessuna annotazione sanitaria"}
+                                  </div>
+                                  <div
+                                    style={{
+                                      background: "#f9fafb",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      padding: "8px 10px",
+                                      whiteSpace: "pre-wrap",
+                                      fontSize: 13
+                                    }}
+                                  >
+                                    {selectedGuardian.notes || "Nessuna nota aggiuntiva"}
+                                  </div>
+                                </section>
+                              </div>
+                            )}
+                            {guardianDetailTab === "documents" && (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap"
+                                  }}
+                                >
+                                  <div>
+                                    <h4 style={{ margin: 0 }}>Archivio documentale</h4>
+                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                                      Conserva scontrini, fatture, cedolini e istanze per predisporre rendiconti trasparenti come richiesto da Fallco A.D.S.
+                                    </p>
+                                  </div>
+                                  <button
+                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
+                                    disabled={guardianDetailLoading}
+                                    onClick={() => openGuardianEntryModal("document")}
+                                  >
+                                    + Aggiungi documento
+                                  </button>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: "left" }}>Documento</th>
+                                      <th>Categoria</th>
+                                      <th>Data</th>
+                                      <th>Riferimento</th>
+                                      <th></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedGuardian.documents && selectedGuardian.documents.length > 0 ? (
+                                      selectedGuardian.documents.map((doc) => (
+                                        <tr key={doc.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                          <td style={{ padding: "6px 4px" }}>
+                                            <div style={{ fontWeight: 600 }}>{doc.title}</div>
+                                            {doc.notes && (
+                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{doc.notes}</div>
+                                            )}
+                                          </td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.category || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.date ? formatDateValue(doc.date) : "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.reference || "—"}</td>
+                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
+                                            {doc.link && (
+                                              <a href={doc.link} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
+                                                Apri
+                                              </a>
+                                            )}
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                openGuardianEntryModal("document", doc);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
+                                              title="Modifica"
+                                            >
+                                              ✏️
+                                            </button>
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                deleteGuardianDocument(doc);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                                              title="Elimina"
+                                            >
+                                              🗑️
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="5" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
+                                          Nessun documento registrato: archivia ricevute e istanze per predisporre rapidamente il rendiconto annuale.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {guardianDetailTab === "inventory" && (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap"
+                                  }}
+                                >
+                                  <div>
+                                    <h4 style={{ margin: 0 }}>Inventario patrimoniale</h4>
+                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                                      Traccia beni mobili e conti correnti per predisporre l'inventario iniziale richiesto dal giudice tutelare.
+                                    </p>
+                                  </div>
+                                  <button
+                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
+                                    disabled={guardianDetailLoading}
+                                    onClick={() => openGuardianEntryModal("inventory")}
+                                  >
+                                    + Aggiungi bene
+                                  </button>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: "left" }}>Bene</th>
+                                      <th>Categoria</th>
+                                      <th>Collocazione</th>
+                                      <th>Quantità</th>
+                                      <th>Valore</th>
+                                      <th></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedGuardian.assetInventory && selectedGuardian.assetInventory.length > 0 ? (
+                                      selectedGuardian.assetInventory.map((item) => (
+                                        <tr key={item.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                          <td style={{ padding: "6px 4px" }}>
+                                            <div style={{ fontWeight: 600 }}>{item.label}</div>
+                                            {item.notes && (
+                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{item.notes}</div>
+                                            )}
+                                          </td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.category || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.location || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.quantity ?? "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{typeof item.value === "number" ? euro(item.value) : "—"}</td>
+                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                openGuardianEntryModal("inventory", item);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
+                                              title="Modifica"
+                                            >
+                                              ✏️
+                                            </button>
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                deleteInventoryItem(item);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                                              title="Elimina"
+                                            >
+                                              🗑️
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
+                                          Nessun bene censito: registra conti correnti, immobili e arredi per completare l'inventario dell'amministrato.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {guardianDetailTab === "finance" && (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap"
+                                  }}
+                                >
+                                  <div>
+                                    <h4 style={{ margin: 0 }}>Entrate e uscite</h4>
+                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                                      Traccia incassi e spese quotidiane per generare il rendiconto economico annuale in stile Fallco.
+                                    </p>
+                                  </div>
+                                  <button
+                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
+                                    disabled={guardianDetailLoading}
+                                    onClick={() => openGuardianEntryModal("movement")}
+                                  >
+                                    + Registra movimento
+                                  </button>
+                                </div>
+                                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
+                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Entrate totali</div>
+                                    <div style={{ fontSize: 16, fontWeight: 700 }}>
+                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalIncome) : "—"}
+                                    </div>
+                                  </div>
+                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
+                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Uscite totali</div>
+                                    <div style={{ fontSize: 16, fontWeight: 700 }}>
+                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalExpense) : "—"}
+                                    </div>
+                                  </div>
+                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
+                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Saldo corrente</div>
+                                    <div
+                                      style={{
+                                        fontSize: 16,
+                                        fontWeight: 700,
+                                        color: selectedGuardianFinancial
+                                          ? selectedGuardianFinancial.balance > 0
+                                            ? "#047857"
+                                            : selectedGuardianFinancial.balance < 0
+                                            ? "#b91c1c"
+                                            : "#111827"
+                                          : "#111827"
+                                      }}
+                                    >
+                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.balance) : "—"}
+                                    </div>
+                                  </div>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: "left" }}>Data</th>
+                                      <th>Tipo</th>
+                                      <th>Categoria</th>
+                                      <th style={{ textAlign: "left" }}>Descrizione</th>
+                                      <th>Importo</th>
+                                      <th></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedGuardian.financialMovements && selectedGuardian.financialMovements.length > 0 ? (
+                                      selectedGuardian.financialMovements.map((movement) => {
+                                        const amountColor =
+                                          movement.type === "entrata" ? "#047857" : movement.type === "uscita" ? "#b91c1c" : "#111827";
+                                        return (
+                                          <tr key={movement.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>{movement.date ? formatDateValue(movement.date) : "—"}</td>
+                                            <td style={{ padding: "6px 4px", fontSize: 13, textTransform: "capitalize" }}>{movement.type}</td>
+                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>{movement.category || "—"}</td>
+                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
+                                              <div>{movement.description || "—"}</div>
+                                              {movement.reference && (
+                                                <div style={{ fontSize: 11, color: "#6b7280" }}>Rif: {movement.reference}</div>
+                                              )}
+                                            </td>
+                                            <td style={{ padding: "6px 4px", fontSize: 13, color: amountColor, textAlign: "right" }}>
+                                              {euro(movement.amount)}
+                                            </td>
+                                            <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
+                                              <button
+                                                onClick={(ev) => {
+                                                  ev.stopPropagation();
+                                                  openGuardianEntryModal("movement", movement);
+                                                }}
+                                                style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
+                                                title="Modifica"
+                                              >
+                                                ✏️
+                                              </button>
+                                              <button
+                                                onClick={(ev) => {
+                                                  ev.stopPropagation();
+                                                  deleteGuardianMovement(movement);
+                                                }}
+                                                style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                                                title="Elimina"
+                                              >
+                                                🗑️
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
+                                          Nessuna movimentazione registrata: annota entrate ed uscite per ottenere un saldo aggiornato da condividere con il giudice.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {guardianDetailTab === "reports" && (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap"
+                                  }}
+                                >
+                                  <div>
+                                    <h4 style={{ margin: 0 }}>Rendiconti annuali e finali</h4>
+                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                                      Pianifica e deposita i rendiconti periodici richiesti dal giudice; tieni traccia di protocolli e allegati.
+                                    </p>
+                                  </div>
+                                  <button
+                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
+                                    disabled={guardianDetailLoading}
+                                    onClick={() => openGuardianEntryModal("report")}
+                                  >
+                                    + Nuovo rendiconto
+                                  </button>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: "left" }}>Titolo</th>
+                                      <th>Periodo</th>
+                                      <th>Stato</th>
+                                      <th>Deposito</th>
+                                      <th>Protocollo</th>
+                                      <th></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedGuardian.reports && selectedGuardian.reports.length > 0 ? (
+                                      selectedGuardian.reports.map((report) => (
+                                        <tr key={report.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                          <td style={{ padding: "6px 4px" }}>
+                                            <div style={{ fontWeight: 600 }}>{report.title}</div>
+                                            {report.summary && (
+                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{report.summary}</div>
+                                            )}
+                                          </td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>
+                                            {report.periodStart ? formatDateValue(report.periodStart) : "—"} – {report.periodEnd ? formatDateValue(report.periodEnd) : "—"}
+                                          </td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13, textTransform: "capitalize" }}>{report.status || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{report.deliveredAt ? formatDateValue(report.deliveredAt) : "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{report.protocol || "—"}</td>
+                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
+                                            {report.attachment && (
+                                              <a href={report.attachment} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
+                                                Allegato
+                                              </a>
+                                            )}
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                openGuardianEntryModal("report", report);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
+                                              title="Modifica"
+                                            >
+                                              ✏️
+                                            </button>
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                deleteGuardianReport(report);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                                              title="Elimina"
+                                            >
+                                              🗑️
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
+                                          Nessun rendiconto registrato: programma le scadenze per evitare richiami dalla cancelleria.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                            {guardianDetailTab === "filings" && (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap"
+                                  }}
+                                >
+                                  <div>
+                                    <h4 style={{ margin: 0 }}>Depositi telematici</h4>
+                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                                      Registra invii PEC o depositi PCT/SICID per dimostrare l'avvenuta comunicazione con il tribunale.
+                                    </p>
+                                  </div>
+                                  <button
+                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
+                                    disabled={guardianDetailLoading}
+                                    onClick={() => openGuardianEntryModal("filing")}
+                                  >
+                                    + Nuovo deposito
+                                  </button>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: "left" }}>Data</th>
+                                      <th>Oggetto</th>
+                                      <th>Registro</th>
+                                      <th>Protocollo</th>
+                                      <th>Esito</th>
+                                      <th></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedGuardian.courtFilings && selectedGuardian.courtFilings.length > 0 ? (
+                                      selectedGuardian.courtFilings.map((filing) => (
+                                        <tr key={filing.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.date ? formatDateValue(filing.date) : "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>
+                                            <div style={{ fontWeight: 600 }}>{filing.subject}</div>
+                                            {filing.notes && (
+                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{filing.notes}</div>
+                                            )}
+                                          </td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.registry || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.protocol || "—"}</td>
+                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.outcome || "—"}</td>
+                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
+                                            {filing.attachment && (
+                                              <a href={filing.attachment} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
+                                                Allegato
+                                              </a>
+                                            )}
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                openGuardianEntryModal("filing", filing);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
+                                              title="Modifica"
+                                            >
+                                              ✏️
+                                            </button>
+                                            <button
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                deleteGuardianFiling(filing);
+                                              }}
+                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                                              title="Elimina"
+                                            >
+                                              🗑️
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr>
+                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
+                                          Nessun deposito registrato: annota protocolli PEC e ricevute PCT per ricostruire la corrispondenza con la cancelleria.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <h3>Seleziona un amministrato</h3>
+                      <p style={{ fontSize: 13, color: "#4b5563" }}>
+                        Cerca un amministrato sulla sinistra per visualizzare i dati del decreto, le scadenze di
+                        rendicontazione e le note operative. Questa scheda ti aiuta a mantenere aggiornati tutti gli
+                        obblighi verso il tribunale e la rete familiare.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={card}>
+                <h3>Cosa deve offrire un gestionale per amministratori di sostegno</h3>
+                <p style={{ fontSize: 13, color: "#4b5563" }}>
+                  Secondo le linee guida operative dei servizi tutelari occorre tracciare informazioni puntuali su
+                  beneficiari, decreti e rendicontazioni economiche. Qui trovi i pilastri fondamentali:
+                </p>
+                <ul style={{ paddingLeft: 20, fontSize: 13, color: "#374151", marginBottom: 12 }}>
+                  <li>
+                    <b>Anagrafiche complete</b> con dati personali, contatti di emergenza e riferimenti a giudice e
+                    decreto di nomina.
+                  </li>
+                  <li>
+                    <b>Monitoraggio delle scadenze</b> per i rendiconti periodici, la revisione dei progetti di vita e le
+                    udienze davanti al giudice tutelare.
+                  </li>
+                  <li>
+                    <b>Gestione economica trasparente</b> con indicazione di entrate, contributi e note su spese dedicate
+                    al beneficiario.
+                  </li>
+                  <li>
+                    <b>Registro delle relazioni</b> con servizi sociali, familiari e strutture sanitarie per documentare
+                    comunicazioni e decisioni condivise.
+                  </li>
+                  <li>
+                    <b>Diario socio-sanitario</b> per annotare terapie, fragilità e indicazioni del medico curante utili a
+                    pianificare gli interventi.
+                  </li>
+                </ul>
+                <p style={{ fontSize: 13, color: "#4b5563" }}>
+                  La nuova sezione "Amministrati" consolida queste esigenze in un'unica scheda collegata al resto del
+                  gestionale, pronta per operare da Mac e iPhone.
+                </p>
               </div>
             </>
           )}
@@ -662,6 +2439,39 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per numero, oggetto o cliente"
+                    value={caseQuery}
+                    onChange={(e) => setCaseQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    Stato:
+                    <select
+                      value={caseStatusFilter}
+                      onChange={(e) => setCaseStatusFilter(e.target.value)}
+                      style={{ marginLeft: 6, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
+                    >
+                      <option value="all">Tutte</option>
+                      <option value="aperta">Aperte</option>
+                      <option value="chiusa">Chiuse</option>
+                    </select>
+                  </label>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredCases.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -675,7 +2485,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cases.map((c) => (
+                    {filteredCases.map((c) => (
                       <tr
                         key={c.id}
                         style={{ borderBottom: "1px solid #e5e7eb", cursor: "pointer" }}
@@ -707,7 +2517,7 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {cases.length === 0 && (
+                    {filteredCases.length === 0 && (
                       <tr>
                         <td colSpan="7">Nessuna pratica</td>
                       </tr>
@@ -874,6 +2684,27 @@ function App() {
                 </div>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per numero, cliente o pratica"
+                    value={invoiceQuery}
+                    onChange={(e) => setInvoiceQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredInvoices.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -886,7 +2717,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((inv) => (
+                    {filteredInvoices.map((inv) => (
                       <tr key={inv.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                         <td>{inv.number}</td>
                         <td>{inv.date}</td>
@@ -905,7 +2736,7 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {invoices.length === 0 && (
+                    {filteredInvoices.length === 0 && (
                       <tr>
                         <td colSpan="6">Nessuna fattura</td>
                       </tr>
@@ -926,6 +2757,40 @@ function App() {
                 </button>
               </div>
               <div style={card}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <input
+                    type="search"
+                    placeholder="Cerca per descrizione o pratica"
+                    value={deadlineQuery}
+                    onChange={(e) => setDeadlineQuery(e.target.value)}
+                    style={{ ...searchInput, minWidth: 260 }}
+                  />
+                  <label style={{ fontSize: 12, color: "#6b7280" }}>
+                    Tipo:
+                    <select
+                      value={deadlineTypeFilter}
+                      onChange={(e) => setDeadlineTypeFilter(e.target.value)}
+                      style={{ marginLeft: 6, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
+                    >
+                      <option value="all">Tutti</option>
+                      <option value="udienza">Udienze</option>
+                      <option value="scadenza">Scadenze</option>
+                      <option value="termine">Termini</option>
+                    </select>
+                  </label>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {filteredDeadlines.length} risultati
+                  </span>
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -937,8 +2802,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {deadlines.map((d) => {
-                      const cas = cases.find((c) => c.id === d.caseId);
+                    {filteredDeadlines.map((d) => {
+                      const cas = casesById.get(d.caseId);
                       return (
                         <tr key={d.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                           <td>{d.date}</td>
@@ -952,7 +2817,7 @@ function App() {
                         </tr>
                       );
                     })}
-                    {deadlines.length === 0 && (
+                    {filteredDeadlines.length === 0 && (
                       <tr>
                         <td colSpan="5">Nessuna scadenza</td>
                       </tr>
@@ -1054,6 +2919,20 @@ function App() {
       </div>
 
       {/* MODALI -------------------------------------------------*/}
+
+      {/* nuovo / modifica amministrato */}
+      {showGuardianModal && (
+        <Modal
+          onClose={closeGuardianModal}
+          title={editingGuardian ? "Modifica amministrato di sostegno" : "Nuovo amministrato di sostegno"}
+        >
+          <GuardianForm
+            initialData={editingGuardian}
+            onSubmit={submitGuardian}
+            onCancel={closeGuardianModal}
+          />
+        </Modal>
+      )}
 
       {/* nuovo cliente */}
       {showNewClient && (
@@ -1373,8 +3252,133 @@ function Modal({ children, onClose, title }) {
   );
 }
 
+function GuardianForm({ initialData, onSubmit, onCancel }) {
+  const data = initialData || {};
+  return (
+    <form onSubmit={onSubmit}>
+      <label>
+        Nome e cognome<br />
+        <input name="fullName" required defaultValue={data.fullName || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Stato amministrazione<br />
+        <select name="status" defaultValue={data.status || "attivo"} style={{ width: "100%" }}>
+          <option value="attivo">Attivo</option>
+          <option value="chiuso">Chiuso</option>
+          <option value="archiviato">Archiviato</option>
+        </select>
+      </label>
+      <br />
+      <label>
+        Livello di supporto / progetto<br />
+        <input name="supportLevel" defaultValue={data.supportLevel || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Data di nascita<br />
+        <input name="birthDate" type="date" defaultValue={data.birthDate || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Codice fiscale<br />
+        <input name="fiscalCode" defaultValue={data.fiscalCode || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Residenza<br />
+        <input name="residence" defaultValue={data.residence || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Tribunale competente<br />
+        <input name="court" defaultValue={data.court || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Giudice tutelare<br />
+        <input name="judge" defaultValue={data.judge || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Data decreto di nomina<br />
+        <input name="decreeDate" type="date" defaultValue={data.decreeDate || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Frequenza rendiconti (es. annuale, semestrale)<br />
+        <input
+          name="reportingFrequency"
+          defaultValue={data.reportingFrequency || ""}
+          style={{ width: "100%" }}
+        />
+      </label>
+      <br />
+      <label>
+        Prossima scadenza rendiconto<br />
+        <input name="nextReportDue" type="date" defaultValue={data.nextReportDue || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Ultimo rendiconto inviato<br />
+        <input name="lastReportSent" type="date" defaultValue={data.lastReportSent || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Entrate, contributi e patrimonio<br />
+        <input name="income" defaultValue={data.income || ""} style={{ width: "100%" }} />
+      </label>
+      <br />
+      <label>
+        Contatto servizi sociali<br />
+        <input
+          name="socialServicesContact"
+          defaultValue={data.socialServicesContact || ""}
+          style={{ width: "100%" }}
+        />
+      </label>
+      <br />
+      <label>
+        Familiari e riferimenti utili<br />
+        <textarea
+          name="familyContacts"
+          defaultValue={data.familyContacts || ""}
+          style={{ width: "100%", minHeight: 60 }}
+        />
+      </label>
+      <br />
+      <label>
+        Note sanitarie<br />
+        <textarea
+          name="healthNotes"
+          defaultValue={data.healthNotes || ""}
+          style={{ width: "100%", minHeight: 60 }}
+        />
+      </label>
+      <br />
+      <label>
+        Note operative aggiuntive<br />
+        <textarea name="notes" defaultValue={data.notes || ""} style={{ width: "100%", minHeight: 80 }} />
+      </label>
+      <br />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" onClick={onCancel} style={{ ...btn, background: "#6b7280" }}>
+          Annulla
+        </button>
+        <button type="submit" style={btn}>
+          Salva
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function StudioForm({ studio, onSaved }) {
   const [form, setForm] = useState(studio);
+
+  useEffect(() => {
+    setForm(studio);
+  }, [studio]);
 
   const change = (k, v) => {
     setForm({ ...form, [k]: v });
@@ -1382,12 +3386,16 @@ function StudioForm({ studio, onSaved }) {
 
   const save = async (e) => {
     e.preventDefault();
-    await fetch(`${API_BASE}/studio`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    if (onSaved) onSaved();
+    try {
+      await fetchJson(`${API_BASE}/studio`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      if (onSaved) onSaved();
+    } catch (err) {
+      alert(`Errore durante il salvataggio: ${err?.message || "riprovare"}`);
+    }
   };
 
   return (
@@ -1476,6 +3484,63 @@ function StudioForm({ studio, onSaved }) {
       </button>
     </form>
   );
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  if (!res.ok) {
+    let message = text.trim();
+    if (!message) {
+      message = `Errore ${res.status}`;
+    } else {
+      try {
+        const data = JSON.parse(message);
+        if (data && typeof data === "object") {
+          if (data.message) {
+            message = data.message;
+          } else {
+            message = JSON.stringify(data);
+          }
+        }
+      } catch (err) {
+        // testo non JSON, mantengo message
+      }
+    }
+    throw new Error(message);
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch (err) {
+    return trimmed;
+  }
+}
+
+function normalizeText(value) {
+  if (value === null || value === undefined) return "";
+  return value
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function formatDateValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(date);
 }
 
 // helper

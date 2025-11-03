@@ -49,6 +49,7 @@ function loadDB() {
       clients: [],
       cases: [],
       deadlines: [],
+      guardianships: [],
       documents: [],
       activities: [],
       expenses: [],
@@ -66,6 +67,12 @@ function saveDB(db) {
 }
 
 let db = loadDB();
+
+if (!Array.isArray(db.guardianships)) {
+  db.guardianships = [];
+}
+
+db.guardianships.forEach(ensureGuardianCollections);
 
 // ------------------------------------------------------
 // UPLOAD
@@ -129,6 +136,66 @@ function prettyLineType(t) {
   return t;
 }
 
+function escapeICSText(value) {
+  if (value === undefined || value === null) return "";
+  return value
+    .toString()
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function foldICSLine(line) {
+  const maxLength = 74;
+  if (Buffer.byteLength(line, "utf8") <= maxLength) return [line];
+  const result = [];
+  let remaining = line;
+  while (Buffer.byteLength(remaining, "utf8") > maxLength) {
+    let slice = "";
+    let bytes = 0;
+    let i = 0;
+    while (i < remaining.length && bytes < maxLength) {
+      const char = remaining[i];
+      const charBytes = Buffer.byteLength(char, "utf8");
+      if (bytes + charBytes > maxLength) break;
+      slice += char;
+      bytes += charBytes;
+      i += 1;
+    }
+    if (!slice) {
+      slice = remaining.slice(0, maxLength);
+      i = maxLength;
+    }
+    result.push(slice);
+    remaining = " " + remaining.slice(i);
+  }
+  result.push(remaining);
+  return result;
+}
+
+function formatICSTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
+function parseDateToUTC(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+  const [year, month, day] = parts;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateToICS(date) {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function addDaysUTC(date, days) {
+  const copy = new Date(date.getTime());
+  copy.setUTCDate(copy.getUTCDate() + days);
+  return copy;
+}
+
 // aggiunge una riga di cronostoria
 function addLog({ caseId, action, detail }) {
   const logItem = {
@@ -142,6 +209,207 @@ function addLog({ caseId, action, detail }) {
   db.logs.push(logItem);
   saveDB(db);
   return logItem;
+}
+
+function applyGuardianFields(base, source = {}) {
+  const fields = [
+    "birthDate",
+    "fiscalCode",
+    "residence",
+    "status",
+    "supportLevel",
+    "court",
+    "judge",
+    "decreeDate",
+    "nextReportDue",
+    "reportingFrequency",
+    "lastReportSent",
+    "income",
+    "healthNotes",
+    "socialServicesContact",
+    "familyContacts",
+    "notes"
+  ];
+  const multiline = new Set(["familyContacts", "healthNotes", "notes"]);
+  const result = { ...base };
+  fields.forEach(field => {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) {
+      return;
+    }
+    if (field === "status") {
+      result.status = sanitizeGuardianStatus(source[field], base.status);
+      return;
+    }
+    const raw = cleanString(source[field]);
+    result[field] = multiline.has(field) ? raw : raw.trim();
+  });
+  return result;
+}
+
+function cleanString(value, fallback = "") {
+  if (value === undefined || value === null) return fallback;
+  return value.toString();
+}
+
+function sanitizeGuardianStatus(value, fallback = "attivo") {
+  const allowed = new Set(["attivo", "chiuso", "archiviato", "in revisione", "sospeso"]);
+  const raw = cleanString(value, fallback).trim().toLowerCase();
+  if (!raw) {
+    return fallback || "attivo";
+  }
+  if (allowed.has(raw)) {
+    return raw;
+  }
+  return raw;
+}
+
+const guardianCollectionKeys = [
+  "documents",
+  "assetInventory",
+  "financialMovements",
+  "reports",
+  "courtFilings"
+];
+
+function ensureGuardianCollections(guardian) {
+  if (!guardian) return guardian;
+  guardianCollectionKeys.forEach(key => {
+    if (!Array.isArray(guardian[key])) {
+      guardian[key] = [];
+    }
+  });
+  return guardian;
+}
+
+function cloneGuardian(guardian) {
+  if (!guardian) return null;
+  ensureGuardianCollections(guardian);
+  return {
+    ...guardian,
+    documents: guardian.documents.map(doc => ({ ...doc })),
+    assetInventory: guardian.assetInventory.map(item => ({ ...item })),
+    financialMovements: guardian.financialMovements.map(move => ({ ...move })),
+    reports: guardian.reports.map(report => ({ ...report })),
+    courtFilings: guardian.courtFilings.map(filing => ({ ...filing }))
+  };
+}
+
+function toNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function guardianWithDerived(guardian) {
+  if (!guardian) return null;
+  const copy = cloneGuardian(guardian);
+  const movements = copy.financialMovements || [];
+  const totals = movements.reduce(
+    (acc, move) => {
+      const type = cleanString(move.type).trim().toLowerCase();
+      const amount = toNumber(move.amount, 0);
+      if (type === "entrata") acc.income += amount;
+      if (type === "uscita") acc.expense += amount;
+      return acc;
+    },
+    { income: 0, expense: 0 }
+  );
+  const balance = totals.income - totals.expense;
+
+  const assetsValue = (copy.assetInventory || []).reduce(
+    (sum, asset) => sum + toNumber(asset.value, 0),
+    0
+  );
+
+  const deliveredReports = (copy.reports || []).filter(report => {
+    const status = cleanString(report.status).trim().toLowerCase();
+    return status === "consegnato" || status === "depositato" || !!report.deliveredAt;
+  });
+  deliveredReports.sort((a, b) => {
+    const aDate = new Date(a.deliveredAt || a.periodEnd || a.periodStart || 0).getTime();
+    const bDate = new Date(b.deliveredAt || b.periodEnd || b.periodStart || 0).getTime();
+    return bDate - aDate;
+  });
+  const lastReport = deliveredReports.length > 0 ? deliveredReports[0] : null;
+  const pendingReports = Math.max((copy.reports || []).length - deliveredReports.length, 0);
+
+  copy.financialSummary = {
+    totalIncome: roundCurrency(totals.income),
+    totalExpense: roundCurrency(totals.expense),
+    balance: roundCurrency(balance)
+  };
+
+  copy.assetSummary = {
+    totalItems: (copy.assetInventory || []).length,
+    totalValue: roundCurrency(assetsValue)
+  };
+
+  copy.documentsSummary = {
+    totalDocuments: (copy.documents || []).length
+  };
+
+  copy.reportingSummary = {
+    totalReports: (copy.reports || []).length,
+    deliveredReports: deliveredReports.length,
+    pendingReports,
+    lastDeliveredAt: lastReport ? lastReport.deliveredAt || lastReport.periodEnd || lastReport.periodStart || null : null
+  };
+
+  copy.filingsSummary = {
+    totalFilings: (copy.courtFilings || []).length
+  };
+
+  return copy;
+}
+
+function touchGuardian(guardian) {
+  if (!guardian) return;
+  guardian.updatedAt = new Date().toISOString();
+}
+
+function sanitizeMovementType(value) {
+  const normalized = cleanString(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "income" || normalized === "entrate") return "entrata";
+  if (normalized === "expense" || normalized === "uscite") return "uscita";
+  if (normalized === "entrata" || normalized === "uscita") return normalized;
+  return null;
+}
+
+function sanitizeReportStatus(value, fallback = "in preparazione") {
+  const normalized = cleanString(value, fallback).trim().toLowerCase();
+  if (!normalized) return fallback;
+  const map = new Map([
+    ["consegnato", "consegnato"],
+    ["depositato", "depositato"],
+    ["inviato", "inviato"],
+    ["programmato", "programmato"],
+    ["in preparazione", "in preparazione"],
+    ["bozza", "bozza"],
+    ["approvato", "approvato"]
+  ]);
+  if (map.has(normalized)) {
+    return map.get(normalized);
+  }
+  return normalized;
+}
+
+function getGuardianOrRespond(res, guardianId) {
+  const guardian = db.guardianships.find(g => g.id === guardianId);
+  if (!guardian) {
+    res.status(404).json({ message: "Amministrato non trovato" });
+    return null;
+  }
+  ensureGuardianCollections(guardian);
+  return guardian;
+}
+
+function respondWithGuardian(res, guardian, status = 200) {
+  return res.status(status).json(guardianWithDerived(guardian));
 }
 
 // ------------------------------------------------------
@@ -222,6 +490,489 @@ app.get("/api/clients/:id", (req, res) => {
   const clientCases = db.cases.filter(c => c.clientId === cl.id);
   const clientInvoices = db.invoices.filter(i => i.clientId === cl.id);
   res.json({ ...cl, cases: clientCases, invoices: clientInvoices });
+});
+
+// ------------------------------------------------------
+// AMMINISTRATI DI SOSTEGNO
+// ------------------------------------------------------
+app.get("/api/guardianships", (req, res) => {
+  const search = (req.query.search || "").toString().trim().toLowerCase();
+  let items = Array.isArray(db.guardianships) ? [...db.guardianships] : [];
+  if (search) {
+    items = items.filter(g => {
+      const fields = [
+        g.fullName,
+        g.fiscalCode,
+        g.judge,
+        g.court,
+        g.socialServicesContact,
+        g.familyContacts
+      ]
+        .filter(Boolean)
+        .map(v => v.toString().toLowerCase());
+      return fields.some(v => v.includes(search));
+    });
+  }
+  items.sort((a, b) => {
+    const aa = (a.fullName || "").toLowerCase();
+    const bb = (b.fullName || "").toLowerCase();
+    if (aa < bb) return -1;
+    if (aa > bb) return 1;
+    return 0;
+  });
+  res.json(items.map(guardianWithDerived));
+});
+
+app.post("/api/guardianships", (req, res) => {
+  const fullName = (req.body.fullName || "").toString().trim();
+  if (!fullName) {
+    return res.status(400).json({ message: "Il nome dell'amministrato è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  const guardian = applyGuardianFields(
+    {
+      id: uuidv4(),
+      fullName,
+      birthDate: "",
+      fiscalCode: "",
+      residence: "",
+      status: "attivo",
+      supportLevel: "",
+      court: "",
+      judge: "",
+      decreeDate: "",
+      nextReportDue: "",
+      reportingFrequency: "",
+      lastReportSent: "",
+      income: "",
+      healthNotes: "",
+      socialServicesContact: "",
+      familyContacts: "",
+      notes: "",
+      documents: [],
+      assetInventory: [],
+      financialMovements: [],
+      reports: [],
+      courtFilings: [],
+      createdAt: now,
+      updatedAt: now
+    },
+    req.body
+  );
+  guardian.fullName = fullName;
+  guardian.createdAt = now;
+  guardian.updatedAt = now;
+  ensureGuardianCollections(guardian);
+  db.guardianships.push(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.get("/api/guardianships/:id", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  respondWithGuardian(res, guardian);
+});
+
+app.put("/api/guardianships/:id", (req, res) => {
+  const idx = db.guardianships.findIndex(g => g.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Amministrato non trovato" });
+  }
+  const current = db.guardianships[idx];
+  const fullName = req.body.fullName ? req.body.fullName.toString().trim() : current.fullName;
+  if (!fullName) {
+    return res.status(400).json({ message: "Il nome dell'amministrato è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  const updated = applyGuardianFields(current, req.body);
+  updated.fullName = fullName;
+  updated.id = current.id;
+  updated.createdAt = current.createdAt || updated.createdAt || now;
+  updated.updatedAt = now;
+  ensureGuardianCollections(updated);
+  db.guardianships[idx] = updated;
+  saveDB(db);
+  respondWithGuardian(res, updated);
+});
+
+app.delete("/api/guardianships/:id", (req, res) => {
+  const idx = db.guardianships.findIndex(g => g.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Amministrato non trovato" });
+  }
+  const removed = db.guardianships.splice(idx, 1)[0];
+  saveDB(db);
+  res.json(removed);
+});
+
+// ------------------------------------------------------
+// DOCUMENTI AMMINISTRATO
+// ------------------------------------------------------
+app.post("/api/guardianships/:id/documents", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const title = cleanString(req.body.title || "").trim();
+  if (!title) {
+    return res.status(400).json({ message: "Il titolo del documento è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  const doc = {
+    id: uuidv4(),
+    title,
+    category: cleanString(req.body.category || "").trim(),
+    date: cleanString(req.body.date || "").trim(),
+    reference: cleanString(req.body.reference || "").trim(),
+    link: cleanString(req.body.link || "").trim(),
+    notes: cleanString(req.body.notes || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  guardian.documents.push(doc);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.put("/api/guardianships/:id/documents/:docId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.documents.findIndex(d => d.id === req.params.docId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Documento non trovato" });
+  }
+  const current = guardian.documents[idx];
+  const title = cleanString(req.body.title !== undefined ? req.body.title : current.title).trim();
+  if (!title) {
+    return res.status(400).json({ message: "Il titolo del documento è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  guardian.documents[idx] = {
+    ...current,
+    title,
+    category: cleanString(req.body.category !== undefined ? req.body.category : current.category).trim(),
+    date: cleanString(req.body.date !== undefined ? req.body.date : current.date).trim(),
+    reference: cleanString(req.body.reference !== undefined ? req.body.reference : current.reference).trim(),
+    link: cleanString(req.body.link !== undefined ? req.body.link : current.link).trim(),
+    notes: cleanString(req.body.notes !== undefined ? req.body.notes : current.notes),
+    updatedAt: now
+  };
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+app.delete("/api/guardianships/:id/documents/:docId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.documents.findIndex(d => d.id === req.params.docId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Documento non trovato" });
+  }
+  guardian.documents.splice(idx, 1);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+// ------------------------------------------------------
+// INVENTARIO BENI
+// ------------------------------------------------------
+app.post("/api/guardianships/:id/inventory", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const label = cleanString(req.body.label || "").trim();
+  if (!label) {
+    return res.status(400).json({ message: "La descrizione del bene è obbligatoria" });
+  }
+  const now = new Date().toISOString();
+  const quantity = toNumber(req.body.quantity, 1) || 1;
+  const value = roundCurrency(toNumber(req.body.value, 0));
+  const item = {
+    id: uuidv4(),
+    label,
+    category: cleanString(req.body.category || "").trim(),
+    location: cleanString(req.body.location || "").trim(),
+    quantity,
+    value,
+    notes: cleanString(req.body.notes || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  guardian.assetInventory.push(item);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.put("/api/guardianships/:id/inventory/:itemId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.assetInventory.findIndex(i => i.id === req.params.itemId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Voce di inventario non trovata" });
+  }
+  const current = guardian.assetInventory[idx];
+  const label = cleanString(req.body.label !== undefined ? req.body.label : current.label).trim();
+  if (!label) {
+    return res.status(400).json({ message: "La descrizione del bene è obbligatoria" });
+  }
+  const now = new Date().toISOString();
+  const quantity = req.body.quantity !== undefined ? toNumber(req.body.quantity, current.quantity || 1) : current.quantity || 1;
+  const value = req.body.value !== undefined ? roundCurrency(toNumber(req.body.value, current.value || 0)) : roundCurrency(current.value || 0);
+  guardian.assetInventory[idx] = {
+    ...current,
+    label,
+    category: cleanString(req.body.category !== undefined ? req.body.category : current.category).trim(),
+    location: cleanString(req.body.location !== undefined ? req.body.location : current.location).trim(),
+    quantity,
+    value,
+    notes: cleanString(req.body.notes !== undefined ? req.body.notes : current.notes),
+    updatedAt: now
+  };
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+app.delete("/api/guardianships/:id/inventory/:itemId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.assetInventory.findIndex(i => i.id === req.params.itemId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Voce di inventario non trovata" });
+  }
+  guardian.assetInventory.splice(idx, 1);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+// ------------------------------------------------------
+// MOVIMENTI ECONOMICI
+// ------------------------------------------------------
+app.post("/api/guardianships/:id/movements", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const type = sanitizeMovementType(req.body.type || "");
+  if (!type) {
+    return res.status(400).json({ message: "Specificare se la voce è un'entrata o un'uscita" });
+  }
+  const amount = Number(req.body.amount);
+  if (!Number.isFinite(amount)) {
+    return res.status(400).json({ message: "Importo non valido" });
+  }
+  const now = new Date().toISOString();
+  const movement = {
+    id: uuidv4(),
+    type,
+    amount: roundCurrency(amount),
+    date: cleanString(req.body.date || "").trim(),
+    category: cleanString(req.body.category || "").trim(),
+    description: cleanString(req.body.description || "").trim(),
+    reference: cleanString(req.body.reference || "").trim(),
+    notes: cleanString(req.body.notes || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  guardian.financialMovements.push(movement);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.put("/api/guardianships/:id/movements/:movementId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.financialMovements.findIndex(m => m.id === req.params.movementId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Movimento non trovato" });
+  }
+  const current = guardian.financialMovements[idx];
+  const type = sanitizeMovementType(req.body.type !== undefined ? req.body.type : current.type);
+  if (!type) {
+    return res.status(400).json({ message: "Specificare se la voce è un'entrata o un'uscita" });
+  }
+  const amountSource = req.body.amount !== undefined ? Number(req.body.amount) : Number(current.amount);
+  if (!Number.isFinite(amountSource)) {
+    return res.status(400).json({ message: "Importo non valido" });
+  }
+  const now = new Date().toISOString();
+  guardian.financialMovements[idx] = {
+    ...current,
+    type,
+    amount: roundCurrency(amountSource),
+    date: cleanString(req.body.date !== undefined ? req.body.date : current.date).trim(),
+    category: cleanString(req.body.category !== undefined ? req.body.category : current.category).trim(),
+    description: cleanString(req.body.description !== undefined ? req.body.description : current.description).trim(),
+    reference: cleanString(req.body.reference !== undefined ? req.body.reference : current.reference).trim(),
+    notes: cleanString(req.body.notes !== undefined ? req.body.notes : current.notes),
+    updatedAt: now
+  };
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+app.delete("/api/guardianships/:id/movements/:movementId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.financialMovements.findIndex(m => m.id === req.params.movementId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Movimento non trovato" });
+  }
+  guardian.financialMovements.splice(idx, 1);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+// ------------------------------------------------------
+// RENDICONTI
+// ------------------------------------------------------
+app.post("/api/guardianships/:id/reports", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const title = cleanString(req.body.title || "").trim();
+  if (!title) {
+    return res.status(400).json({ message: "Il titolo del rendiconto è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  const report = {
+    id: uuidv4(),
+    title,
+    periodStart: cleanString(req.body.periodStart || "").trim(),
+    periodEnd: cleanString(req.body.periodEnd || "").trim(),
+    deliveredAt: cleanString(req.body.deliveredAt || "").trim(),
+    status: sanitizeReportStatus(req.body.status || "in preparazione"),
+    protocol: cleanString(req.body.protocol || "").trim(),
+    attachment: cleanString(req.body.attachment || "").trim(),
+    summary: cleanString(req.body.summary || ""),
+    notes: cleanString(req.body.notes || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  guardian.reports.push(report);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.put("/api/guardianships/:id/reports/:reportId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.reports.findIndex(r => r.id === req.params.reportId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Rendiconto non trovato" });
+  }
+  const current = guardian.reports[idx];
+  const title = cleanString(req.body.title !== undefined ? req.body.title : current.title).trim();
+  if (!title) {
+    return res.status(400).json({ message: "Il titolo del rendiconto è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  guardian.reports[idx] = {
+    ...current,
+    title,
+    periodStart: cleanString(req.body.periodStart !== undefined ? req.body.periodStart : current.periodStart).trim(),
+    periodEnd: cleanString(req.body.periodEnd !== undefined ? req.body.periodEnd : current.periodEnd).trim(),
+    deliveredAt: cleanString(req.body.deliveredAt !== undefined ? req.body.deliveredAt : current.deliveredAt).trim(),
+    status: sanitizeReportStatus(req.body.status !== undefined ? req.body.status : current.status),
+    protocol: cleanString(req.body.protocol !== undefined ? req.body.protocol : current.protocol).trim(),
+    attachment: cleanString(req.body.attachment !== undefined ? req.body.attachment : current.attachment).trim(),
+    summary: cleanString(req.body.summary !== undefined ? req.body.summary : current.summary),
+    notes: cleanString(req.body.notes !== undefined ? req.body.notes : current.notes),
+    updatedAt: now
+  };
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+app.delete("/api/guardianships/:id/reports/:reportId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.reports.findIndex(r => r.id === req.params.reportId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Rendiconto non trovato" });
+  }
+  guardian.reports.splice(idx, 1);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+// ------------------------------------------------------
+// DEPOSITI TELEMATICI
+// ------------------------------------------------------
+app.post("/api/guardianships/:id/filings", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const subject = cleanString(req.body.subject || "").trim();
+  if (!subject) {
+    return res.status(400).json({ message: "L'oggetto del deposito è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  const filing = {
+    id: uuidv4(),
+    subject,
+    date: cleanString(req.body.date || "").trim(),
+    channel: cleanString(req.body.channel || "PCT").trim() || "PCT",
+    registry: cleanString(req.body.registry || "").trim(),
+    protocol: cleanString(req.body.protocol || "").trim(),
+    outcome: cleanString(req.body.outcome || "").trim(),
+    attachment: cleanString(req.body.attachment || "").trim(),
+    notes: cleanString(req.body.notes || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  guardian.courtFilings.push(filing);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian, 201);
+});
+
+app.put("/api/guardianships/:id/filings/:filingId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.courtFilings.findIndex(f => f.id === req.params.filingId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Deposito non trovato" });
+  }
+  const current = guardian.courtFilings[idx];
+  const subject = cleanString(req.body.subject !== undefined ? req.body.subject : current.subject).trim();
+  if (!subject) {
+    return res.status(400).json({ message: "L'oggetto del deposito è obbligatorio" });
+  }
+  const now = new Date().toISOString();
+  guardian.courtFilings[idx] = {
+    ...current,
+    subject,
+    date: cleanString(req.body.date !== undefined ? req.body.date : current.date).trim(),
+    channel: cleanString(req.body.channel !== undefined ? req.body.channel : current.channel).trim() || "PCT",
+    registry: cleanString(req.body.registry !== undefined ? req.body.registry : current.registry).trim(),
+    protocol: cleanString(req.body.protocol !== undefined ? req.body.protocol : current.protocol).trim(),
+    outcome: cleanString(req.body.outcome !== undefined ? req.body.outcome : current.outcome).trim(),
+    attachment: cleanString(req.body.attachment !== undefined ? req.body.attachment : current.attachment).trim(),
+    notes: cleanString(req.body.notes !== undefined ? req.body.notes : current.notes),
+    updatedAt: now
+  };
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
+});
+
+app.delete("/api/guardianships/:id/filings/:filingId", (req, res) => {
+  const guardian = getGuardianOrRespond(res, req.params.id);
+  if (!guardian) return;
+  const idx = guardian.courtFilings.findIndex(f => f.id === req.params.filingId);
+  if (idx === -1) {
+    return res.status(404).json({ message: "Deposito non trovato" });
+  }
+  guardian.courtFilings.splice(idx, 1);
+  touchGuardian(guardian);
+  saveDB(db);
+  respondWithGuardian(res, guardian);
 });
 
 // ------------------------------------------------------
@@ -377,6 +1128,62 @@ app.get("/api/deadlines", (req, res) => {
   if (from) items = items.filter(d => d.date >= from);
   if (to) items = items.filter(d => d.date <= to);
   res.json(items);
+});
+
+app.get("/api/deadlines/ics", (req, res) => {
+  const deadlines = (db.deadlines || []).filter(d => d.date).sort((a, b) => a.date.localeCompare(b.date));
+  const casesById = new Map((db.cases || []).map(c => [c.id, c]));
+  const now = new Date();
+  const lines = [];
+  const pushLine = line => {
+    foldICSLine(line).forEach(l => lines.push(l));
+  };
+
+  pushLine("BEGIN:VCALENDAR");
+  pushLine("VERSION:2.0");
+  pushLine("PRODID:-//Gestionale Studio Legale//Calendario Scadenze//IT");
+  pushLine("CALSCALE:GREGORIAN");
+  pushLine("METHOD:PUBLISH");
+  pushLine(`X-WR-CALNAME:${escapeICSText(db.studio && db.studio.name ? `${db.studio.name} - Scadenze` : "Scadenze Studio")}`);
+  pushLine("X-WR-TIMEZONE:Europe/Rome");
+
+  deadlines.forEach(deadline => {
+    const startDate = parseDateToUTC(deadline.date);
+    if (!startDate) return;
+    const endDate = addDaysUTC(startDate, 1);
+    const caseInfo = casesById.get(deadline.caseId);
+    const summaryParts = [];
+    if (deadline.type) summaryParts.push(deadline.type.charAt(0).toUpperCase() + deadline.type.slice(1));
+    if (deadline.description) summaryParts.push(deadline.description);
+    const summary = summaryParts.length ? summaryParts.join(" - ") : "Scadenza";
+    const descriptionParts = [];
+    if (deadline.description) descriptionParts.push(deadline.description);
+    const typeLabel = deadline.type
+      ? deadline.type.charAt(0).toUpperCase() + deadline.type.slice(1)
+      : "Scadenza";
+    descriptionParts.push(`Tipo: ${typeLabel}`);
+    if (caseInfo) {
+      descriptionParts.push(`${caseInfo.number || ""} ${caseInfo.subject || ""}`.trim());
+      if (caseInfo.clientName) descriptionParts.push(`Cliente: ${caseInfo.clientName}`);
+    }
+    if (deadline.assignedTo) descriptionParts.push(`Assegnato a: ${deadline.assignedTo}`);
+    const description = descriptionParts.join("\n");
+
+    pushLine("BEGIN:VEVENT");
+    pushLine(`UID:${escapeICSText(deadline.id)}@gestionestudio`);
+    pushLine(`DTSTAMP:${formatICSTimestamp(now)}`);
+    pushLine(`DTSTART;VALUE=DATE:${formatDateToICS(startDate)}`);
+    pushLine(`DTEND;VALUE=DATE:${formatDateToICS(endDate)}`);
+    pushLine(`SUMMARY:${escapeICSText(summary)}`);
+    if (description) pushLine(`DESCRIPTION:${escapeICSText(description)}`);
+    pushLine("END:VEVENT");
+  });
+
+  pushLine("END:VCALENDAR");
+
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline; filename=\"scadenze-studio.ics\"");
+  res.send(lines.join("\r\n") + "\r\n");
 });
 
 app.post("/api/cases/:id/deadlines", (req, res) => {
