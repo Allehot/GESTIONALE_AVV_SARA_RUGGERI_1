@@ -1,0 +1,173 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "username": "admin",
+      "password": "admin",
+      "name": "Amministratore"
+    }
+  ],
+  "studio": {
+    "name": "Studio Legale Avv. Sara Ruggeri",
+    "address": "Pavullo nel Frignano (MO)",
+    "vatNumber": "03840750362",
+    "fiscalCode": "RGGSRA91M60G393B",
+    "email": "avv.sararuggeri@gmail.com",
+    "Pec": "Sara.ruggeri@ordineavvmodena.it",
+    "phone": "+39 3926061553",
+    "Fax": "+39 053622584",
+    "cassaPerc": 4,
+    "ivaPerc": 22,
+    "ritenutaPerc": 20,
+    "bollo": 2,
+    "logoPath": "/assets/logo-studio.png"
+  },
+  "clients": [
+    {
+      "id": "98bf8007-524f-43b8-bc1b-3c11da65950d",
+      "name": "Alessandro Verucchi",
+      "fiscalCode": "",
+      "vatNumber": "",
+      "email": "",
+      "pec": "",
+      "phone": "3385790274",
+      "address": "Via Casa Parenti 19",
+      "notes": ""
+    },
+    {
+      "id": "2222",
+      "name": "pippo",
+      "fiscalCode": "mmmm",
+      "vatNumber": "",
+      "email": "",
+      "pec": "",
+      "phone": "",
+      "address": "",
+      "notes": ""
+    }
+  ],
+  "cases": [
+    {
+      "id": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "number": "PR-2025-0002",
+      "clientId": "98bf8007-524f-43b8-bc1b-3c11da65950d",
+      "subject": "SSSS",
+      "court": "Tribunale di Modena",
+      "section": "",
+      "judge": "",
+      "rgNumber": "1111",
+      "caseType": "penale",
+      "proceedingType": "stragiudiziale",
+      "status": "aperta",
+      "value": 0,
+      "notes": "",
+      "createdAt": "2025-10-31T13:03:03.858Z"
+    }
+  ],
+  "deadlines": [],
+  "documents": [],
+  "activities": [],
+  "expenses": [],
+  "invoices": [
+    {
+      "id": "d41ea7fb-2bb7-431d-80d0-e2674a71fec1",
+      "number": "FAT-2025-0002",
+      "date": "2025-10-31",
+      "clientId": "98bf8007-524f-43b8-bc1b-3c11da65950d",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "lines": [
+        {
+          "type": "manual",
+          "description": "2500",
+          "amount": 200
+        }
+      ],
+      "notes": "",
+      "totals": {
+        "imponibile": 200,
+        "cassa": 8,
+        "iva": 45.76,
+        "ritenuta": 40,
+        "bollo": 2,
+        "totale": 215.76
+      },
+      "status": "emessa"
+    }
+  ],
+  "logs": [
+    {
+      "id": "5efb7658-0d95-4120-b3c0-4dcc995e5094",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "creazione-pratica",
+      "detail": "Creata pratica: PR-2025-0002 - SSSS",
+      "createdAt": "2025-10-31T13:03:03.858Z"
+    },
+    {
+      "id": "36492779-f4bc-4656-aa0b-6272bd5bceab",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "fattura-emessa",
+      "detail": "Fattura FAT-2025-0002 per € 215.76",
+      "createdAt": "2025-10-31T13:03:22.022Z"
+    },
+    {
+      "id": "8f47d690-18de-444a-b862-8bb8b2f447b2",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-creata",
+      "detail": "udienza: 2025-10-31 - ",
+      "createdAt": "2025-10-31T13:03:50.597Z"
+    },
+    {
+      "id": "a969da79-a3ec-4b39-914c-5158edc37093",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "nota-manuale",
+      "detail": "pippo",
+      "createdAt": "2025-10-31T13:03:56.756Z"
+    },
+    {
+      "id": "4acb9815-2c65-456d-bcc2-be988bdd1187",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-eliminata",
+      "detail": "",
+      "createdAt": "2025-10-31T13:07:32.145Z"
+    },
+    {
+      "id": "3570da63-b058-4e14-b761-e23b7c803f1c",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-creata",
+      "detail": "scadenza: 2025-10-31 - pippo franco in galera",
+      "createdAt": "2025-10-31T13:07:43.019Z"
+    },
+    {
+      "id": "17faf208-99e9-45c2-9cb6-6e661b77c7c1",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-eliminata",
+      "detail": "pippo franco in galera",
+      "createdAt": "2025-10-31T13:13:43.797Z"
+    },
+    {
+      "id": "2887a499-7b7a-4460-858d-afc6eb0cce9d",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "modifica-pratica",
+      "detail": "Pratica modificata",
+      "createdAt": "2025-10-31T13:30:59.084Z"
+    },
+    {
+      "id": "dfcb676e-5c10-4545-957e-8ef6eade27e8",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-creata",
+      "detail": "udienza: 2025-10-31 - ",
+      "createdAt": "2025-10-31T13:31:07.119Z"
+    },
+    {
+      "id": "ae331fc2-e58e-4b3b-90b4-5dbf4d599332",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "scadenza-eliminata",
+      "detail": "",
+      "createdAt": "2025-10-31T13:31:14.278Z"
+    }
+  ],
+  "sequences": {
+    "case": 2,
+    "invoice": 2
+  }
+}

@@ -1,0 +1,1 @@
+{"name":"gestionale-avvocato-sara-ruggeri-backend","version":"7.0.0","main":"src/server.js","scripts":{"start":"node src/server.js"},"dependencies":{"cors":"^2.8.5","exceljs":"^4.4.0","express":"^4.19.2","multer":"^1.4.5-lts.1","pdfkit":"^0.15.0","uuid":"^9.0.1"}}
