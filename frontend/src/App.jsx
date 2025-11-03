@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 const API_BASE = "/api";
 
 // Stili base
@@ -94,7 +94,6 @@ function App() {
   const [invoiceQuery, setInvoiceQuery] = useState("");
   const [deadlineQuery, setDeadlineQuery] = useState("");
   const [deadlineTypeFilter, setDeadlineTypeFilter] = useState("all");
-  const [guardianQuery, setGuardianQuery] = useState("");
 
   // modali
   const [showNewClient, setShowNewClient] = useState(false);
@@ -133,30 +132,6 @@ function App() {
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth()); // 0-11
   const [calendarCopyStatus, setCalendarCopyStatus] = useState("");
   const calendarCopyTimeout = useRef(null);
-
-  function applyGuardianUpdate(guardianData, options = {}) {
-    if (!guardianData || !guardianData.id) return;
-    setGuardianships((prev) => {
-      const list = Array.isArray(prev) ? [...prev] : [];
-      const index = list.findIndex((item) => item.id === guardianData.id);
-      if (index === -1) {
-        list.push(guardianData);
-      } else {
-        list[index] = guardianData;
-      }
-      return list;
-    });
-    setSelectedGuardian((prev) => {
-      if (options.select) return guardianData;
-      if (prev && prev.id === guardianData.id) {
-        return guardianData;
-      }
-      return prev;
-    });
-    if (options.select) {
-      setGuardianDetailTab("overview");
-    }
-  }
 
   const casesById = useMemo(() => {
     const map = new Map();
@@ -212,30 +187,6 @@ function App() {
         .some((value) => value.includes(query));
     });
   }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
-
-  const filteredGuardianships = useMemo(() => {
-    const items = [...guardianships].sort((a, b) =>
-      String(a.fullName || "").localeCompare(String(b.fullName || ""), "it", { sensitivity: "base" })
-    );
-    const query = normalizeText(guardianQuery);
-    if (!query) return items;
-    return items.filter((g) =>
-      [g.fullName, g.fiscalCode, g.judge, g.court, g.status, g.reportingFrequency, g.supportLevel]
-        .map(normalizeText)
-        .some((value) => value.includes(query))
-    );
-  }, [guardianships, guardianQuery]);
-
-  const selectedGuardianFinancial =
-    selectedGuardian && selectedGuardian.financialSummary ? selectedGuardian.financialSummary : null;
-  const selectedGuardianAssets =
-    selectedGuardian && selectedGuardian.assetSummary ? selectedGuardian.assetSummary : null;
-  const selectedGuardianReporting =
-    selectedGuardian && selectedGuardian.reportingSummary ? selectedGuardian.reportingSummary : null;
-  const selectedGuardianDocumentsSummary =
-    selectedGuardian && selectedGuardian.documentsSummary ? selectedGuardian.documentsSummary : null;
-  const selectedGuardianFilingsSummary =
-    selectedGuardian && selectedGuardian.filingsSummary ? selectedGuardian.filingsSummary : null;
 
   const calendarFeedUrl = useMemo(() => {
     if (typeof window === "undefined") {
@@ -294,11 +245,63 @@ function App() {
     }, 4000);
   };
 
+  const casesById = useMemo(() => {
+    const map = new Map();
+    cases.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [cases]);
+
+  const filteredClients = useMemo(() => {
+    const query = normalizeText(clientQuery);
+    if (!query) return clients;
+    return clients.filter((cl) =>
+      [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [clients, clientQuery]);
+
+  const filteredCases = useMemo(() => {
+    const query = normalizeText(caseQuery);
+    return cases.filter((c) => {
+      if (caseStatusFilter !== "all" && normalizeText(c.status) !== normalizeText(caseStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      return [c.number, c.subject, c.clientName, c.caseType, c.proceedingType, c.status]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [cases, caseQuery, caseStatusFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = normalizeText(invoiceQuery);
+    if (!query) return invoices;
+    return invoices.filter((inv) =>
+      [inv.number, inv.clientName, inv.caseNumber, inv.date]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [invoices, invoiceQuery]);
+
+  const filteredDeadlines = useMemo(() => {
+    const query = normalizeText(deadlineQuery);
+    return deadlines.filter((d) => {
+      if (deadlineTypeFilter !== "all" && normalizeText(d.type) !== normalizeText(deadlineTypeFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      const relatedCase = casesById.get(d.caseId);
+      return [d.date, d.type, d.description, relatedCase ? relatedCase.subject : "", relatedCase ? relatedCase.number : ""]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
+
   // caricamento di tutti i dati
-  async function loadAll(opts = {}) {
-    const guardianIdToRefresh =
-      opts.guardianId || (selectedGuardian ? selectedGuardian.id : null);
-    const forceSelectGuardian = opts.selectGuardian === true;
+  async function loadAll() {
     setIsLoading(true);
     setLoadError("");
     try {
@@ -306,7 +309,6 @@ function App() {
         studioData,
         clientsData,
         casesData,
-        guardianshipsData,
         deadlinesData,
         invoicesData,
         dashboardData,
@@ -314,36 +316,24 @@ function App() {
         monthlyData
       ] = await Promise.all([
         fetchJson(`${API_BASE}/studio`),
-        fetchJson(`${API_BASE}/clients`),
-        fetchJson(`${API_BASE}/cases`),
-        fetchJson(`${API_BASE}/guardianships`),
-        fetchJson(`${API_BASE}/deadlines`),
-        fetchJson(`${API_BASE}/invoices`),
+        fetchJson(`${API_BASE}/clienti`),
+        fetchJson(`${API_BASE}/casi`),
+        fetchJson(`${API_BASE}/scadenze`),
+        fetchJson(`${API_BASE}/fatture`),
         fetchJson(`${API_BASE}/reports/dashboard`),
-        fetchJson(`${API_BASE}/reports/upcoming-deadlines`),
-        fetchJson(`${API_BASE}/reports/monthly`)
+        fetchJson(`${API_BASE}/reports/recenti`),
+        fetchJson(`${API_BASE}/reports/mesi`)
       ]);
 
       setStudio(studioData);
       setClients(Array.isArray(clientsData) ? clientsData : []);
       setCases(Array.isArray(casesData) ? casesData : []);
-      setGuardianships(Array.isArray(guardianshipsData) ? guardianshipsData : []);
       setDeadlines(Array.isArray(deadlinesData) ? deadlinesData : []);
       setInvoices(Array.isArray(invoicesData) ? invoicesData : []);
       setDashboard(dashboardData || null);
       setUpcoming(Array.isArray(upcomingData) ? upcomingData : []);
       setMonthly(monthlyData || null);
       setLastUpdated(new Date());
-
-      if (guardianIdToRefresh) {
-        try {
-          const detail = await fetchJson(`${API_BASE}/guardianships/${guardianIdToRefresh}`);
-          const shouldSelect = forceSelectGuardian || (selectedGuardian && selectedGuardian.id === guardianIdToRefresh);
-          applyGuardianUpdate(detail, { select: shouldSelect });
-        } catch (detailError) {
-          console.error("Errore durante l'aggiornamento del dettaglio amministrato", detailError);
-        }
-      }
     } catch (err) {
       console.error("Errore durante il caricamento dei dati", err);
       setLoadError(err.message || "Impossibile caricare i dati");
@@ -354,15 +344,12 @@ function App() {
 
   const runOrAlert = async (action, errorMessage) => {
     try {
-      const result = await action();
-      if (result === undefined || result === null) {
-        return true;
-      }
-      return result;
+      await action();
+      return true;
     } catch (err) {
       console.error(errorMessage, err);
       alert(`${errorMessage}${err?.message ? `: ${err.message}` : ""}`);
-      return null;
+      return false;
     }
   };
 
@@ -1446,976 +1433,6 @@ function App() {
                 <p style={{ fontSize: 12, color: "#6b7280", marginTop: 12 }}>
                   Se utilizzi il gestionale in rete locale, assicurati che l'indirizzo sopra sia raggiungibile
                   anche da iPhone e Mac (es. sostituendo <code>localhost</code> con l'indirizzo IP del computer).
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* AMMINISTRATI DI SOSTEGNO */}
-          {view === "guardianships" && (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h1>Amministrati di sostegno</h1>
-                <button style={btn} onClick={startNewGuardian}>
-                  + Nuovo amministrato
-                </button>
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.05fr 0.95fr",
-                  gap: 20,
-                  alignItems: "start",
-                  marginTop: 16
-                }}
-              >
-                <div style={card}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 12,
-                      alignItems: "center",
-                      marginBottom: 12
-                    }}
-                  >
-                    <input
-                      type="search"
-                      placeholder="Cerca per nome, giudice o tribunale"
-                      value={guardianQuery}
-                      onChange={(e) => setGuardianQuery(e.target.value)}
-                      style={{ ...searchInput, minWidth: 260 }}
-                    />
-                    {guardianQuery && (
-                      <button
-                        onClick={() => setGuardianQuery("")}
-                        style={{ ...btn, background: "#6b7280", padding: "6px 10px" }}
-                      >
-                        Pulisci filtro
-                      </button>
-                    )}
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>
-                      {filteredGuardianships.length} risultati
-                    </span>
-                  </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th>Amministrato</th>
-                        <th>Stato</th>
-                        <th>Prossimo rendiconto</th>
-                        <th>Saldo</th>
-                        <th>Giudice / Tribunale</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredGuardianships.map((g) => {
-                        const isSelected = selectedGuardian && selectedGuardian.id === g.id;
-                        const balanceValue =
-                          g.financialSummary && typeof g.financialSummary.balance === "number"
-                            ? g.financialSummary.balance
-                            : null;
-                        const balanceColor = balanceValue > 0 ? "#047857" : balanceValue < 0 ? "#b91c1c" : "#374151";
-                        return (
-                          <tr
-                            key={g.id}
-                            onClick={() => openGuardian(g)}
-                            style={{
-                              borderBottom: "1px solid #e5e7eb",
-                              cursor: "pointer",
-                              background: isSelected ? "#eff6ff" : "transparent"
-                            }}
-                          >
-                            <td style={{ padding: "6px 4px" }}>
-                              <div style={{ fontWeight: 600 }}>{g.fullName}</div>
-                              {g.supportLevel && (
-                                <div style={{ fontSize: 12, color: "#6b7280" }}>{g.supportLevel}</div>
-                              )}
-                            </td>
-                            <td style={{ padding: "6px 4px" }}>
-                              <span
-                                style={{
-                                  background: guardianStatusColor(g.status),
-                                  padding: "2px 8px",
-                                  borderRadius: 999,
-                                  fontSize: 12,
-                                  textTransform: "capitalize"
-                                }}
-                              >
-                                {g.status || "n/d"}
-                              </span>
-                            </td>
-                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
-                              {g.nextReportDue ? formatDateValue(g.nextReportDue) : "—"}
-                            </td>
-                            <td style={{ padding: "6px 4px", fontSize: 13, textAlign: "right", color: balanceColor }}>
-                              {typeof balanceValue === "number" ? euro(balanceValue) : "—"}
-                            </td>
-                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
-                              <div>{g.judge || "—"}</div>
-                              {g.court && <div style={{ fontSize: 11, color: "#6b7280" }}>{g.court}</div>}
-                            </td>
-                            <td style={{ padding: "6px 4px", minWidth: 70 }}>
-                              <button
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  startEditGuardian(g);
-                                }}
-                              >
-                                ✏️
-                              </button>{" "}
-                              <button
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  deleteGuardian(g);
-                                }}
-                              >
-                                🗑️
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredGuardianships.length === 0 && (
-                        <tr>
-                          <td colSpan="5" style={{ padding: 12 }}>
-                            Nessun amministrato registrato
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={card}>
-                  {selectedGuardian ? (
-                    <div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          gap: 12,
-                          flexWrap: "wrap"
-                        }}
-                      >
-                        <div style={{ minWidth: 200 }}>
-                          <h3 style={{ margin: 0 }}>{selectedGuardian.fullName}</h3>
-                          {selectedGuardian.supportLevel && (
-                            <div style={{ fontSize: 13, color: "#4b5563" }}>{selectedGuardian.supportLevel}</div>
-                          )}
-                          <div style={{ fontSize: 12, color: "#6b7280", marginTop: selectedGuardian.supportLevel ? 4 : 0 }}>
-                            Decreto {formatDateValue(selectedGuardian.decreeDate) || "n/d"}
-                            {selectedGuardian.court ? ` · ${selectedGuardian.court}` : ""}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <span
-                            style={{
-                              background: guardianStatusColor(selectedGuardian.status),
-                              padding: "4px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              textTransform: "capitalize"
-                            }}
-                          >
-                            {selectedGuardian.status || "n/d"}
-                          </span>
-                          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>
-                            Ultimo aggiornamento: {formatDateTime(selectedGuardian.updatedAt) || "—"}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                        <button style={btn} onClick={() => startEditGuardian(selectedGuardian)} disabled={guardianDetailLoading}>
-                          Modifica scheda
-                        </button>
-                        <button
-                          style={{ ...btn, background: "#ef4444" }}
-                          onClick={() => deleteGuardian(selectedGuardian)}
-                          disabled={guardianDetailLoading}
-                        >
-                          Elimina
-                        </button>
-                        <button
-                          style={{ ...btn, background: "#1d4ed8" }}
-                          onClick={() => openGuardianEntryModal("document")}
-                          disabled={guardianDetailLoading}
-                        >
-                          + Documento
-                        </button>
-                        <button
-                          style={{ ...btn, background: "#0f766e" }}
-                          onClick={() => openGuardianEntryModal("movement")}
-                          disabled={guardianDetailLoading}
-                        >
-                          + Movimento
-                        </button>
-                      </div>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                          gap: 12,
-                          marginTop: 16
-                        }}
-                      >
-                        <div
-                          style={{
-                            background: "#f9fafb",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "10px 12px"
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Documenti archiviati</div>
-                          <div style={{ fontSize: 18, fontWeight: 700 }}>
-                            {selectedGuardianDocumentsSummary?.totalDocuments ??
-                              (selectedGuardian.documents ? selectedGuardian.documents.length : 0)}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Scontrini, fatture, istanze e decreti</div>
-                        </div>
-                        <div
-                          style={{
-                            background: "#f9fafb",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "10px 12px"
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Beni inventariati</div>
-                          <div style={{ fontSize: 18, fontWeight: 700 }}>
-                            {selectedGuardianAssets?.totalItems ??
-                              (selectedGuardian.assetInventory ? selectedGuardian.assetInventory.length : 0)}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>
-                            Valore stimato {selectedGuardianAssets ? euro(selectedGuardianAssets.totalValue) : "—"}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            background: "#f9fafb",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "10px 12px"
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Bilancio AdS</div>
-                          <div
-                            style={{
-                              fontSize: 18,
-                              fontWeight: 700,
-                              color: selectedGuardianFinancial
-                                ? selectedGuardianFinancial.balance > 0
-                                  ? "#047857"
-                                  : selectedGuardianFinancial.balance < 0
-                                  ? "#b91c1c"
-                                  : "#111827"
-                                : "#111827"
-                            }}
-                          >
-                            {selectedGuardianFinancial ? euro(selectedGuardianFinancial.balance) : "—"}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>
-                            Entrate {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalIncome) : "—"} · Uscite
-                            {" "}
-                            {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalExpense) : "—"}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            background: "#f9fafb",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "10px 12px"
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Rendiconti</div>
-                          <div style={{ fontSize: 18, fontWeight: 700 }}>
-                            {selectedGuardianReporting
-                              ? `${selectedGuardianReporting.deliveredReports}/${selectedGuardianReporting.totalReports}`
-                              : `${(selectedGuardian.reports || []).filter((r) => ((r.status || "").toLowerCase() === "consegnato")).length}/${selectedGuardian.reports ? selectedGuardian.reports.length : 0}`}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>
-                            Ultimo invio {selectedGuardianReporting && selectedGuardianReporting.lastDeliveredAt
-                              ? formatDateValue(selectedGuardianReporting.lastDeliveredAt)
-                              : "—"}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            background: "#f9fafb",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "10px 12px"
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Depositi telematici</div>
-                          <div style={{ fontSize: 18, fontWeight: 700 }}>
-                            {selectedGuardianFilingsSummary?.totalFilings ??
-                              (selectedGuardian.courtFilings ? selectedGuardian.courtFilings.length : 0)}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>Protocolli PEC / PCT monitorati</div>
-                        </div>
-                      </div>
-                      {guardianDetailLoading ? (
-                        <div style={{ marginTop: 20, fontSize: 13, color: "#4b5563" }}>Caricamento dettagli aggiornati...</div>
-                      ) : (
-                        <>
-                          <div style={{ display: "flex", gap: 8, marginTop: 20, flexWrap: "wrap" }}>
-                            {guardianTabs.map((tab) => {
-                              const isActive = guardianDetailTab === tab.id;
-                              return (
-                                <button
-                                  key={tab.id}
-                                  onClick={() => setGuardianDetailTab(tab.id)}
-                                  disabled={isActive}
-                                  style={{
-                                    ...btn,
-                                    padding: "6px 12px",
-                                    background: isActive ? "#2563eb" : "#e5e7eb",
-                                    color: isActive ? "#fff" : "#1f2937",
-                                    cursor: isActive ? "default" : "pointer"
-                                  }}
-                                >
-                                  {tab.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div style={{ marginTop: 16 }}>
-                            {guardianDetailTab === "overview" && (
-                              <div style={{ display: "grid", gap: 16 }}>
-                                <section>
-                                  <h4 style={{ marginBottom: 6 }}>Profilo personale</h4>
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                                      gap: 8,
-                                      fontSize: 13
-                                    }}
-                                  >
-                                    <div>
-                                      <b>Data di nascita:</b> {formatDateValue(selectedGuardian.birthDate) || "—"}
-                                    </div>
-                                    <div>
-                                      <b>Codice fiscale:</b> {selectedGuardian.fiscalCode || "—"}
-                                    </div>
-                                    <div>
-                                      <b>Residenza:</b> {selectedGuardian.residence || "—"}
-                                    </div>
-                                  </div>
-                                </section>
-                                <section>
-                                  <h4 style={{ marginBottom: 6 }}>Mandato di tutela</h4>
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                                      gap: 8,
-                                      fontSize: 13
-                                    }}
-                                  >
-                                    <div>
-                                      <b>Tribunale:</b> {selectedGuardian.court || "—"}
-                                    </div>
-                                    <div>
-                                      <b>Giudice tutelare:</b> {selectedGuardian.judge || "—"}
-                                    </div>
-                                    <div>
-                                      <b>Decreto:</b> {formatDateValue(selectedGuardian.decreeDate) || "—"}
-                                    </div>
-                                  </div>
-                                  <div style={{ marginTop: 8, fontSize: 13, color: "#4b5563" }}>
-                                    Frequenza rendiconti: <b>{selectedGuardian.reportingFrequency || "—"}</b> · Prossima scadenza {" "}
-                                    <b>{formatDateValue(selectedGuardian.nextReportDue) || "—"}</b>
-                                  </div>
-                                  <div style={{ marginTop: 4, fontSize: 13, color: "#4b5563" }}>
-                                    Ultimo rendiconto inviato: <b>{formatDateValue(selectedGuardian.lastReportSent) || "—"}</b>
-                                  </div>
-                                  {selectedGuardian.income && (
-                                    <div style={{ marginTop: 4, fontSize: 13, color: "#4b5563" }}>
-                                      Entrate e contributi dichiarati: <b>{selectedGuardian.income}</b>
-                                    </div>
-                                  )}
-                                </section>
-                                <section>
-                                  <h4 style={{ marginBottom: 6 }}>Rete di supporto</h4>
-                                  <p style={{ margin: "4px 0", fontSize: 13 }}>
-                                    <b>Servizi sociali:</b> {selectedGuardian.socialServicesContact || "—"}
-                                  </p>
-                                  <p style={{ margin: "4px 0", fontSize: 13 }}>
-                                    <b>Familiari di riferimento:</b>
-                                  </p>
-                                  <div
-                                    style={{
-                                      background: "#f9fafb",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      padding: "8px 10px",
-                                      whiteSpace: "pre-wrap",
-                                      fontSize: 13
-                                    }}
-                                  >
-                                    {selectedGuardian.familyContacts || "—"}
-                                  </div>
-                                </section>
-                                <section>
-                                  <h4 style={{ marginBottom: 6 }}>Situazione sanitaria e note</h4>
-                                  <div
-                                    style={{
-                                      background: "#f9fafb",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      padding: "8px 10px",
-                                      whiteSpace: "pre-wrap",
-                                      fontSize: 13,
-                                      marginBottom: 8
-                                    }}
-                                  >
-                                    {selectedGuardian.healthNotes || "Nessuna annotazione sanitaria"}
-                                  </div>
-                                  <div
-                                    style={{
-                                      background: "#f9fafb",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      padding: "8px 10px",
-                                      whiteSpace: "pre-wrap",
-                                      fontSize: 13
-                                    }}
-                                  >
-                                    {selectedGuardian.notes || "Nessuna nota aggiuntiva"}
-                                  </div>
-                                </section>
-                              </div>
-                            )}
-                            {guardianDetailTab === "documents" && (
-                              <div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    flexWrap: "wrap"
-                                  }}
-                                >
-                                  <div>
-                                    <h4 style={{ margin: 0 }}>Archivio documentale</h4>
-                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                                      Conserva scontrini, fatture, cedolini e istanze per predisporre rendiconti trasparenti come richiesto da Fallco A.D.S.
-                                    </p>
-                                  </div>
-                                  <button
-                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
-                                    disabled={guardianDetailLoading}
-                                    onClick={() => openGuardianEntryModal("document")}
-                                  >
-                                    + Aggiungi documento
-                                  </button>
-                                </div>
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: "left" }}>Documento</th>
-                                      <th>Categoria</th>
-                                      <th>Data</th>
-                                      <th>Riferimento</th>
-                                      <th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedGuardian.documents && selectedGuardian.documents.length > 0 ? (
-                                      selectedGuardian.documents.map((doc) => (
-                                        <tr key={doc.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                                          <td style={{ padding: "6px 4px" }}>
-                                            <div style={{ fontWeight: 600 }}>{doc.title}</div>
-                                            {doc.notes && (
-                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{doc.notes}</div>
-                                            )}
-                                          </td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.category || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.date ? formatDateValue(doc.date) : "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{doc.reference || "—"}</td>
-                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
-                                            {doc.link && (
-                                              <a href={doc.link} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
-                                                Apri
-                                              </a>
-                                            )}
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                openGuardianEntryModal("document", doc);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
-                                              title="Modifica"
-                                            >
-                                              ✏️
-                                            </button>
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                deleteGuardianDocument(doc);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                                              title="Elimina"
-                                            >
-                                              🗑️
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td colSpan="5" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
-                                          Nessun documento registrato: archivia ricevute e istanze per predisporre rapidamente il rendiconto annuale.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                            {guardianDetailTab === "inventory" && (
-                              <div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    flexWrap: "wrap"
-                                  }}
-                                >
-                                  <div>
-                                    <h4 style={{ margin: 0 }}>Inventario patrimoniale</h4>
-                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                                      Traccia beni mobili e conti correnti per predisporre l'inventario iniziale richiesto dal giudice tutelare.
-                                    </p>
-                                  </div>
-                                  <button
-                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
-                                    disabled={guardianDetailLoading}
-                                    onClick={() => openGuardianEntryModal("inventory")}
-                                  >
-                                    + Aggiungi bene
-                                  </button>
-                                </div>
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: "left" }}>Bene</th>
-                                      <th>Categoria</th>
-                                      <th>Collocazione</th>
-                                      <th>Quantità</th>
-                                      <th>Valore</th>
-                                      <th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedGuardian.assetInventory && selectedGuardian.assetInventory.length > 0 ? (
-                                      selectedGuardian.assetInventory.map((item) => (
-                                        <tr key={item.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                                          <td style={{ padding: "6px 4px" }}>
-                                            <div style={{ fontWeight: 600 }}>{item.label}</div>
-                                            {item.notes && (
-                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{item.notes}</div>
-                                            )}
-                                          </td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.category || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.location || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{item.quantity ?? "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{typeof item.value === "number" ? euro(item.value) : "—"}</td>
-                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                openGuardianEntryModal("inventory", item);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
-                                              title="Modifica"
-                                            >
-                                              ✏️
-                                            </button>
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                deleteInventoryItem(item);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                                              title="Elimina"
-                                            >
-                                              🗑️
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
-                                          Nessun bene censito: registra conti correnti, immobili e arredi per completare l'inventario dell'amministrato.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                            {guardianDetailTab === "finance" && (
-                              <div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    flexWrap: "wrap"
-                                  }}
-                                >
-                                  <div>
-                                    <h4 style={{ margin: 0 }}>Entrate e uscite</h4>
-                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                                      Traccia incassi e spese quotidiane per generare il rendiconto economico annuale in stile Fallco.
-                                    </p>
-                                  </div>
-                                  <button
-                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
-                                    disabled={guardianDetailLoading}
-                                    onClick={() => openGuardianEntryModal("movement")}
-                                  >
-                                    + Registra movimento
-                                  </button>
-                                </div>
-                                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
-                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
-                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Entrate totali</div>
-                                    <div style={{ fontSize: 16, fontWeight: 700 }}>
-                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalIncome) : "—"}
-                                    </div>
-                                  </div>
-                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
-                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Uscite totali</div>
-                                    <div style={{ fontSize: 16, fontWeight: 700 }}>
-                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.totalExpense) : "—"}
-                                    </div>
-                                  </div>
-                                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 12px" }}>
-                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Saldo corrente</div>
-                                    <div
-                                      style={{
-                                        fontSize: 16,
-                                        fontWeight: 700,
-                                        color: selectedGuardianFinancial
-                                          ? selectedGuardianFinancial.balance > 0
-                                            ? "#047857"
-                                            : selectedGuardianFinancial.balance < 0
-                                            ? "#b91c1c"
-                                            : "#111827"
-                                          : "#111827"
-                                      }}
-                                    >
-                                      {selectedGuardianFinancial ? euro(selectedGuardianFinancial.balance) : "—"}
-                                    </div>
-                                  </div>
-                                </div>
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: "left" }}>Data</th>
-                                      <th>Tipo</th>
-                                      <th>Categoria</th>
-                                      <th style={{ textAlign: "left" }}>Descrizione</th>
-                                      <th>Importo</th>
-                                      <th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedGuardian.financialMovements && selectedGuardian.financialMovements.length > 0 ? (
-                                      selectedGuardian.financialMovements.map((movement) => {
-                                        const amountColor =
-                                          movement.type === "entrata" ? "#047857" : movement.type === "uscita" ? "#b91c1c" : "#111827";
-                                        return (
-                                          <tr key={movement.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>{movement.date ? formatDateValue(movement.date) : "—"}</td>
-                                            <td style={{ padding: "6px 4px", fontSize: 13, textTransform: "capitalize" }}>{movement.type}</td>
-                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>{movement.category || "—"}</td>
-                                            <td style={{ padding: "6px 4px", fontSize: 13 }}>
-                                              <div>{movement.description || "—"}</div>
-                                              {movement.reference && (
-                                                <div style={{ fontSize: 11, color: "#6b7280" }}>Rif: {movement.reference}</div>
-                                              )}
-                                            </td>
-                                            <td style={{ padding: "6px 4px", fontSize: 13, color: amountColor, textAlign: "right" }}>
-                                              {euro(movement.amount)}
-                                            </td>
-                                            <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
-                                              <button
-                                                onClick={(ev) => {
-                                                  ev.stopPropagation();
-                                                  openGuardianEntryModal("movement", movement);
-                                                }}
-                                                style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
-                                                title="Modifica"
-                                              >
-                                                ✏️
-                                              </button>
-                                              <button
-                                                onClick={(ev) => {
-                                                  ev.stopPropagation();
-                                                  deleteGuardianMovement(movement);
-                                                }}
-                                                style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                                                title="Elimina"
-                                              >
-                                                🗑️
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })
-                                    ) : (
-                                      <tr>
-                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
-                                          Nessuna movimentazione registrata: annota entrate ed uscite per ottenere un saldo aggiornato da condividere con il giudice.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                            {guardianDetailTab === "reports" && (
-                              <div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    flexWrap: "wrap"
-                                  }}
-                                >
-                                  <div>
-                                    <h4 style={{ margin: 0 }}>Rendiconti annuali e finali</h4>
-                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                                      Pianifica e deposita i rendiconti periodici richiesti dal giudice; tieni traccia di protocolli e allegati.
-                                    </p>
-                                  </div>
-                                  <button
-                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
-                                    disabled={guardianDetailLoading}
-                                    onClick={() => openGuardianEntryModal("report")}
-                                  >
-                                    + Nuovo rendiconto
-                                  </button>
-                                </div>
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: "left" }}>Titolo</th>
-                                      <th>Periodo</th>
-                                      <th>Stato</th>
-                                      <th>Deposito</th>
-                                      <th>Protocollo</th>
-                                      <th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedGuardian.reports && selectedGuardian.reports.length > 0 ? (
-                                      selectedGuardian.reports.map((report) => (
-                                        <tr key={report.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                                          <td style={{ padding: "6px 4px" }}>
-                                            <div style={{ fontWeight: 600 }}>{report.title}</div>
-                                            {report.summary && (
-                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{report.summary}</div>
-                                            )}
-                                          </td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>
-                                            {report.periodStart ? formatDateValue(report.periodStart) : "—"} – {report.periodEnd ? formatDateValue(report.periodEnd) : "—"}
-                                          </td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13, textTransform: "capitalize" }}>{report.status || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{report.deliveredAt ? formatDateValue(report.deliveredAt) : "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{report.protocol || "—"}</td>
-                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
-                                            {report.attachment && (
-                                              <a href={report.attachment} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
-                                                Allegato
-                                              </a>
-                                            )}
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                openGuardianEntryModal("report", report);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
-                                              title="Modifica"
-                                            >
-                                              ✏️
-                                            </button>
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                deleteGuardianReport(report);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                                              title="Elimina"
-                                            >
-                                              🗑️
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
-                                          Nessun rendiconto registrato: programma le scadenze per evitare richiami dalla cancelleria.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                            {guardianDetailTab === "filings" && (
-                              <div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    flexWrap: "wrap"
-                                  }}
-                                >
-                                  <div>
-                                    <h4 style={{ margin: 0 }}>Depositi telematici</h4>
-                                    <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                                      Registra invii PEC o depositi PCT/SICID per dimostrare l'avvenuta comunicazione con il tribunale.
-                                    </p>
-                                  </div>
-                                  <button
-                                    style={{ ...btn, opacity: guardianDetailLoading ? 0.6 : 1 }}
-                                    disabled={guardianDetailLoading}
-                                    onClick={() => openGuardianEntryModal("filing")}
-                                  >
-                                    + Nuovo deposito
-                                  </button>
-                                </div>
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ textAlign: "left" }}>Data</th>
-                                      <th>Oggetto</th>
-                                      <th>Registro</th>
-                                      <th>Protocollo</th>
-                                      <th>Esito</th>
-                                      <th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedGuardian.courtFilings && selectedGuardian.courtFilings.length > 0 ? (
-                                      selectedGuardian.courtFilings.map((filing) => (
-                                        <tr key={filing.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.date ? formatDateValue(filing.date) : "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>
-                                            <div style={{ fontWeight: 600 }}>{filing.subject}</div>
-                                            {filing.notes && (
-                                              <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "pre-wrap" }}>{filing.notes}</div>
-                                            )}
-                                          </td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.registry || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.protocol || "—"}</td>
-                                          <td style={{ padding: "6px 4px", fontSize: 13 }}>{filing.outcome || "—"}</td>
-                                          <td style={{ padding: "6px 4px", minWidth: 90, textAlign: "right" }}>
-                                            {filing.attachment && (
-                                              <a href={filing.attachment} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
-                                                Allegato
-                                              </a>
-                                            )}
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                openGuardianEntryModal("filing", filing);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer", marginRight: 6 }}
-                                              title="Modifica"
-                                            >
-                                              ✏️
-                                            </button>
-                                            <button
-                                              onClick={(ev) => {
-                                                ev.stopPropagation();
-                                                deleteGuardianFiling(filing);
-                                              }}
-                                              style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                                              title="Elimina"
-                                            >
-                                              🗑️
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td colSpan="6" style={{ padding: 12, fontSize: 13, color: "#4b5563" }}>
-                                          Nessun deposito registrato: annota protocolli PEC e ricevute PCT per ricostruire la corrispondenza con la cancelleria.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <h3>Seleziona un amministrato</h3>
-                      <p style={{ fontSize: 13, color: "#4b5563" }}>
-                        Cerca un amministrato sulla sinistra per visualizzare i dati del decreto, le scadenze di
-                        rendicontazione e le note operative. Questa scheda ti aiuta a mantenere aggiornati tutti gli
-                        obblighi verso il tribunale e la rete familiare.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={card}>
-                <h3>Cosa deve offrire un gestionale per amministratori di sostegno</h3>
-                <p style={{ fontSize: 13, color: "#4b5563" }}>
-                  Secondo le linee guida operative dei servizi tutelari occorre tracciare informazioni puntuali su
-                  beneficiari, decreti e rendicontazioni economiche. Qui trovi i pilastri fondamentali:
-                </p>
-                <ul style={{ paddingLeft: 20, fontSize: 13, color: "#374151", marginBottom: 12 }}>
-                  <li>
-                    <b>Anagrafiche complete</b> con dati personali, contatti di emergenza e riferimenti a giudice e
-                    decreto di nomina.
-                  </li>
-                  <li>
-                    <b>Monitoraggio delle scadenze</b> per i rendiconti periodici, la revisione dei progetti di vita e le
-                    udienze davanti al giudice tutelare.
-                  </li>
-                  <li>
-                    <b>Gestione economica trasparente</b> con indicazione di entrate, contributi e note su spese dedicate
-                    al beneficiario.
-                  </li>
-                  <li>
-                    <b>Registro delle relazioni</b> con servizi sociali, familiari e strutture sanitarie per documentare
-                    comunicazioni e decisioni condivise.
-                  </li>
-                  <li>
-                    <b>Diario socio-sanitario</b> per annotare terapie, fragilità e indicazioni del medico curante utili a
-                    pianificare gli interventi.
-                  </li>
-                </ul>
-                <p style={{ fontSize: 13, color: "#4b5563" }}>
-                  La nuova sezione "Amministrati" consolida queste esigenze in un'unica scheda collegata al resto del
-                  gestionale, pronta per operare da Mac e iPhone.
                 </p>
               </div>
             </>
@@ -3532,15 +2549,6 @@ function formatDateTime(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(date);
-}
-
-function formatDateValue(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(date);
 }
 
 // helper
