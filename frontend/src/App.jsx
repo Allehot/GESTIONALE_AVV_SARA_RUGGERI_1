@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 const API_BASE = "/api";
 
 // Stili base
@@ -221,6 +221,61 @@ function App() {
       setCalendarCopyStatus("");
     }, 4000);
   };
+
+  const casesById = useMemo(() => {
+    const map = new Map();
+    cases.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [cases]);
+
+  const filteredClients = useMemo(() => {
+    const query = normalizeText(clientQuery);
+    if (!query) return clients;
+    return clients.filter((cl) =>
+      [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [clients, clientQuery]);
+
+  const filteredCases = useMemo(() => {
+    const query = normalizeText(caseQuery);
+    return cases.filter((c) => {
+      if (caseStatusFilter !== "all" && normalizeText(c.status) !== normalizeText(caseStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      return [c.number, c.subject, c.clientName, c.caseType, c.proceedingType, c.status]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [cases, caseQuery, caseStatusFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const query = normalizeText(invoiceQuery);
+    if (!query) return invoices;
+    return invoices.filter((inv) =>
+      [inv.number, inv.clientName, inv.caseNumber, inv.date]
+        .map(normalizeText)
+        .some((value) => value.includes(query))
+    );
+  }, [invoices, invoiceQuery]);
+
+  const filteredDeadlines = useMemo(() => {
+    const query = normalizeText(deadlineQuery);
+    return deadlines.filter((d) => {
+      if (deadlineTypeFilter !== "all" && normalizeText(d.type) !== normalizeText(deadlineTypeFilter)) {
+        return false;
+      }
+      if (!query) return true;
+      const relatedCase = casesById.get(d.caseId);
+      return [d.date, d.type, d.description, relatedCase ? relatedCase.subject : "", relatedCase ? relatedCase.number : ""]
+        .map(normalizeText)
+        .some((value) => value.includes(query));
+    });
+  }, [deadlines, deadlineQuery, deadlineTypeFilter, casesById]);
 
   // caricamento di tutti i dati
   async function loadAll() {
