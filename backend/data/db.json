@@ -67,7 +67,35 @@
   "deadlines": [],
   "documents": [],
   "activities": [],
-  "expenses": [],
+  "expenses": [
+    {
+      "id": "e510dd87-87c7-475f-9432-ad934e3865dc",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "date": "2025-11-04",
+      "description": "",
+      "amount": 0,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "e6df17f3-1a30-4695-a9cb-b44e3b04ab96",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "date": "2025-11-04",
+      "description": "",
+      "amount": 0,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "b7eaa971-e228-40fb-aed5-8056159e5e71",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "date": "2025-11-04",
+      "description": "",
+      "amount": 450,
+      "type": "spesa",
+      "documentRef": ""
+    }
+  ],
   "invoices": [
     {
       "id": "d41ea7fb-2bb7-431d-80d0-e2674a71fec1",
@@ -90,6 +118,45 @@
         "ritenuta": 40,
         "bollo": 2,
         "totale": 215.76
+      },
+      "status": "emessa"
+    },
+    {
+      "id": "49b1da40-0290-45c2-ac57-acff243c9256",
+      "number": "FAT-2025-0003",
+      "date": "2025-11-04",
+      "clientId": "2222",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "lines": [
+        {
+          "type": "expense",
+          "description": "",
+          "amount": 0
+        },
+        {
+          "type": "expense",
+          "description": "",
+          "amount": 0
+        },
+        {
+          "type": "expense",
+          "description": "",
+          "amount": 450
+        },
+        {
+          "type": "manual",
+          "description": "650",
+          "amount": 0
+        }
+      ],
+      "notes": "",
+      "totals": {
+        "imponibile": 450,
+        "cassa": 18,
+        "iva": 102.96,
+        "ritenuta": 90,
+        "bollo": 2,
+        "totale": 482.96
       },
       "status": "emessa"
     }
@@ -164,10 +231,80 @@
       "action": "scadenza-eliminata",
       "detail": "",
       "createdAt": "2025-10-31T13:31:14.278Z"
+    },
+    {
+      "id": "8903eb52-7492-4f22-9b9a-877f5abd934e",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "modifica-pratica",
+      "detail": "Pratica modificata",
+      "createdAt": "2025-11-03T13:12:38.339Z"
+    },
+    {
+      "id": "68a03ce1-eaed-446e-88d2-ad40fed1ddfb",
+      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "action": "fattura-emessa",
+      "detail": "Fattura FAT-2025-0003 per € 482.96",
+      "createdAt": "2025-11-04T14:13:17.425Z"
     }
   ],
   "sequences": {
     "case": 2,
-    "invoice": 2
-  }
+    "invoice": 3
+  },
+  "guardianships": [
+    {
+      "id": "707c02f9-b3a5-40e7-a73c-6874c794651a",
+      "fullName": "cncvncvn",
+      "birthDate": "2025-11-05",
+      "fiscalCode": "vvvv",
+      "residence": "vvv",
+      "status": "attivo",
+      "supportLevel": "vvv",
+      "court": "vv",
+      "judge": "vv",
+      "decreeDate": "2025-11-14",
+      "nextReportDue": "2025-11-08",
+      "reportingFrequency": "vvvv",
+      "lastReportSent": "2025-11-08",
+      "income": "vvv",
+      "healthNotes": "",
+      "socialServicesContact": "vvv",
+      "familyContacts": "vv",
+      "notes": "",
+      "documents": [],
+      "assetInventory": [],
+      "financialMovements": [],
+      "reports": [],
+      "courtFilings": [],
+      "createdAt": "2025-11-04T14:07:55.140Z",
+      "updatedAt": "2025-11-04T14:07:55.140Z"
+    },
+    {
+      "id": "8794e844-291e-4927-a297-822dda4b10dc",
+      "fullName": "pippo",
+      "birthDate": "",
+      "fiscalCode": "",
+      "residence": "",
+      "status": "attivo",
+      "supportLevel": "",
+      "court": "",
+      "judge": "",
+      "decreeDate": "",
+      "nextReportDue": "",
+      "reportingFrequency": "",
+      "lastReportSent": "",
+      "income": "",
+      "healthNotes": "",
+      "socialServicesContact": "",
+      "familyContacts": "",
+      "notes": "",
+      "documents": [],
+      "assetInventory": [],
+      "financialMovements": [],
+      "reports": [],
+      "courtFilings": [],
+      "createdAt": "2025-11-04T14:11:56.452Z",
+      "updatedAt": "2025-11-04T14:11:56.452Z"
+    }
+  ]
 }

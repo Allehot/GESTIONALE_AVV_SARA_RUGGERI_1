@@ -15,8 +15,77 @@ const ExcelJS = require("exceljs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({ origin: "http://localhost:5173", credentials: false }));
 app.use(express.json());
+// ======= ALIAS ITALIANI PER LE API (compat layer) =======
+const itToEnMaps = [
+  { it: '/api/clienti',    en: '/api/clients' },
+  { it: '/api/casi',       en: '/api/cases' },
+  { it: '/api/scadenze',   en: '/api/deadlines' },
+  { it: '/api/fatture',    en: '/api/invoices' },
+  { it: '/api/documenti',  en: '/api/documents' },
+
+  // export/import “gruppi”
+  { it: '/api/export/clienti',  en: '/api/export/clients' },
+  { it: '/api/export/casi',     en: '/api/export/cases' },
+  { it: '/api/export/fatture',  en: '/api/export/invoices' },
+  { it: '/api/export/scadenze', en: '/api/export/deadlines' },
+
+  { it: '/api/import/clienti',  en: '/api/import/clients' },
+  { it: '/api/import/casi',     en: '/api/import/cases' },
+  { it: '/api/import/fatture',  en: '/api/import/invoices' },
+];
+
+// middleware generico: riscrive l’URL se inizia con un prefisso IT
+app.use((req, _res, next) => {
+  for (const { it, en } of itToEnMaps) {
+    if (req.url.startsWith(it)) {
+      req.url = en + req.url.slice(it.length);
+      break;
+    }
+  }
+  next();
+});
+
+// --- Alias specifici utili (se il frontend li usa in IT) ---
+// ICS scadenze (IT -> EN)
+app.get('/api/scadenze/ics', (req, res, next) => {
+  req.url = '/api/deadlines/ics';
+  next();
+});
+
+// PDF fattura (IT -> EN)
+app.get('/api/fatture/:id/pdf', (req, res, next) => {
+  req.url = `/api/invoices/${req.params.id}/pdf`;
+  next();
+});
+
+// Scadenze di una pratica (IT -> EN)
+app.post('/api/casi/:id/scadenze', (req, res, next) => {
+  req.url = `/api/cases/${req.params.id}/deadlines`;
+  next();
+});
+
+// Log pratica (IT -> EN, GET e POST)
+app.get('/api/casi/:id/logs', (req, res, next) => {
+  req.url = `/api/cases/${req.params.id}/logs`;
+  next();
+});
+app.post('/api/casi/:id/logs', (req, res, next) => {
+  req.url = `/api/cases/${req.params.id}/logs`;
+  next();
+});
+
+// --- Alias per report con nomi italiani usati nel frontend ---
+app.get('/api/reports/recenti', (req, res, next) => {
+  req.url = '/api/reports/upcoming-deadlines';
+  next();
+});
+app.get('/api/reports/mesi', (req, res, next) => {
+  req.url = '/api/reports/monthly';
+  next();
+});
+// ======= FINE ALIAS ITALIANI =======
 
 // ------------------------------------------------------
 // CARTELLE E DB

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 const API_BASE = "/api";
 
 // Stili base
@@ -76,7 +76,7 @@ function App() {
 
   // dati principali
   const [studio, setStudio] = useState(null);
-  const [clienti, setClienti] = useState([]);
+  const [clients, setClients] = useState([]);
   const [cases, setCases] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -102,8 +102,6 @@ function App() {
   const [showNewDeadline, setShowNewDeadline] = useState(false);
   const [showGuardianModal, setShowGuardianModal] = useState(false);
   const [editingGuardian, setEditingGuardian] = useState(null);
-const [clientExpenseModal, setClientExpenseModal] = useState(null); // {client}
-
 
   // dettaglio pratica
   const [selectedCase, setSelectedCase] = useState(null);
@@ -126,7 +124,7 @@ const [clientExpenseModal, setClientExpenseModal] = useState(null); // {client}
   const [editDeadline, setEditDeadline] = useState(null);
 
   // import
-  const [importType, setImportType] = useState("clienti");
+  const [importType, setImportType] = useState("clients");
   const [importFile, setImportFile] = useState(null);
 
   // calendario: anno/mese navigabili
@@ -143,15 +141,15 @@ const [clientExpenseModal, setClientExpenseModal] = useState(null); // {client}
     return map;
   }, [cases]);
 
-  const filteredClienti = useMemo(() => {
+  const filteredClients = useMemo(() => {
     const query = normalizeText(clientQuery);
-    if (!query) return clienti;
-    return clienti.filter((cl) =>
+    if (!query) return clients;
+    return clients.filter((cl) =>
       [cl.name, cl.email, cl.phone, cl.fiscalCode, cl.vatNumber]
         .map(normalizeText)
         .some((value) => value.includes(query))
     );
-  }, [clienti, clientQuery]);
+  }, [clients, clientQuery]);
 
   const filteredCases = useMemo(() => {
     const query = normalizeText(caseQuery);
@@ -192,13 +190,13 @@ const [clientExpenseModal, setClientExpenseModal] = useState(null); // {client}
 
   const calendarFeedUrl = useMemo(() => {
     if (typeof window === "undefined") {
-      return `${API_BASE}/scadenze/ics`;
+      return `${API_BASE}/deadlines/ics`;
     }
     const origin = window.location && window.location.origin ? window.location.origin : "";
     if (!origin || origin === "null") {
-      return `${API_BASE}/scadenze/ics`;
+      return `${API_BASE}/deadlines/ics`;
     }
-    return `${origin}${API_BASE}/scadenze/ics`;
+    return `${origin}${API_BASE}/deadlines/ics`;
   }, []);
 
   const calendarSubscribeUrl = useMemo(() => {
@@ -246,37 +244,33 @@ const [clientExpenseModal, setClientExpenseModal] = useState(null); // {client}
       setCalendarCopyStatus("");
     }, 4000);
   };
-
   // caricamento di tutti i dati
   async function loadAll() {
     setIsLoading(true);
     setLoadError("");
     try {
-const [
-  studioData,
-  clientsData,
-  casesData,
-  deadlinesData,
-  invoicesData,
-  dashboardData,
-  upcomingData,
-  monthlyData,
-  guardiansData
-] = await Promise.all([
-  fetchJson(`${API_BASE}/studio`),
-  fetchJson(`${API_BASE}/clients`),
-  fetchJson(`${API_BASE}/cases`),
-  fetchJson(`${API_BASE}/deadlines`),
-  fetchJson(`${API_BASE}/invoices`),
-  fetchJson(`${API_BASE}/reports/dashboard`),
-  fetchJson(`${API_BASE}/reports/recenti`), // alias -> upcoming
-  fetchJson(`${API_BASE}/reports/mesi`),    // alias -> monthly
-  fetchJson(`${API_BASE}/guardianships`)
-]);
+      const [
+        studioData,
+        clientsData,
+        casesData,
+        deadlinesData,
+        invoicesData,
+        dashboardData,
+        upcomingData,
+        monthlyData
+      ] = await Promise.all([
+        fetchJson(`${API_BASE}/studio`),
+        fetchJson(`${API_BASE}/clienti`),
+        fetchJson(`${API_BASE}/casi`),
+        fetchJson(`${API_BASE}/scadenze`),
+        fetchJson(`${API_BASE}/fatture`),
+        fetchJson(`${API_BASE}/reports/dashboard`),
+        fetchJson(`${API_BASE}/reports/recenti`),
+        fetchJson(`${API_BASE}/reports/mesi`)
+      ]);
 
-setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
       setStudio(studioData);
-      setClienti(Array.isArray(clientsData) ? clientsData : []);
+      setClients(Array.isArray(clientsData) ? clientsData : []);
       setCases(Array.isArray(casesData) ? casesData : []);
       setDeadlines(Array.isArray(deadlinesData) ? deadlinesData : []);
       setInvoices(Array.isArray(invoicesData) ? invoicesData : []);
@@ -344,7 +338,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     };
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/clienti`, {
+        fetchJson(`${API_BASE}/clients`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -361,7 +355,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     if (!name) return;
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/clienti/${cl.id}`, {
+        fetchJson(`${API_BASE}/clients/${cl.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name })
@@ -376,7 +370,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
   const deleteClient = async (cl) => {
     if (!window.confirm("Eliminare questo cliente?")) return;
     const success = await runOrAlert(
-      () => fetchJson(`${API_BASE}/clienti/${cl.id}`, { method: "DELETE" }),
+      () => fetchJson(`${API_BASE}/clients/${cl.id}`, { method: "DELETE" }),
       "Impossibile eliminare il cliente (ha pratiche o fatture collegate?)"
     );
     if (success) {
@@ -399,7 +393,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     };
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/casi`, {
+        fetchJson(`${API_BASE}/cases`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -414,8 +408,8 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
   const openCase = async (c) => {
     try {
       const [caseData, logsData] = await Promise.all([
-        fetchJson(`${API_BASE}/casi/${c.id}`),
-        fetchJson(`${API_BASE}/casi/${c.id}/logs`)
+        fetchJson(`${API_BASE}/cases/${c.id}`),
+        fetchJson(`${API_BASE}/cases/${c.id}/logs`)
       ]);
       setSelectedCase(caseData);
       setCaseLogs(Array.isArray(logsData) ? logsData : []);
@@ -433,7 +427,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     const status = window.prompt("Stato (aperta/chiusa):", c.status || "aperta");
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/casi/${c.id}`, {
+        fetchJson(`${API_BASE}/cases/${c.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subject, status, proceedingType })
@@ -448,7 +442,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
   const deleteCase = async (c) => {
     if (!window.confirm("Eliminare la pratica e le scadenze collegate?")) return;
     const success = await runOrAlert(
-      () => fetchJson(`${API_BASE}/casi/${c.id}`, { method: "DELETE" }),
+      () => fetchJson(`${API_BASE}/cases/${c.id}`, { method: "DELETE" }),
       "Errore durante l'eliminazione della pratica"
     );
     if (success) {
@@ -463,7 +457,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     if (!selectedCase || !newCaseNote.trim()) return;
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/casi/${selectedCase.id}/logs`, {
+        fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ detail: newCaseNote })
@@ -472,7 +466,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     );
     if (!success) return;
     try {
-      const logsData = await fetchJson(`${API_BASE}/casi/${selectedCase.id}/logs`);
+      const logsData = await fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`);
       setCaseLogs(Array.isArray(logsData) ? logsData : []);
       setNewCaseNote("");
     } catch (err) {
@@ -496,7 +490,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     };
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/casi/${caseId}/scadenze`, {
+        fetchJson(`${API_BASE}/cases/${caseId}/deadlines`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -509,7 +503,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     // se sono nel dettaglio pratica, la ricarico
     if (selectedCase && selectedCase.id === caseId) {
       try {
-        const caseData = await fetchJson(`${API_BASE}/casi/${caseId}`);
+        const caseData = await fetchJson(`${API_BASE}/cases/${caseId}`);
         setSelectedCase(caseData);
       } catch (err) {
         console.error("Errore durante il ricaricamento della pratica", err);
@@ -520,7 +514,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
   const deleteDeadline = async (d) => {
     if (!window.confirm("Eliminare questa scadenza/udienza?")) return;
     const success = await runOrAlert(
-      () => fetchJson(`${API_BASE}/scadenze/${d.id}`, { method: "DELETE" }),
+      () => fetchJson(`${API_BASE}/deadlines/${d.id}`, { method: "DELETE" }),
       "Errore durante l'eliminazione della scadenza"
     );
     if (!success) return;
@@ -529,8 +523,8 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     if (selectedCase && d.caseId === selectedCase.id) {
       try {
         const [caseData, logsData] = await Promise.all([
-          fetchJson(`${API_BASE}/casi/${selectedCase.id}`),
-          fetchJson(`${API_BASE}/casi/${selectedCase.id}/logs`)
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}`),
+          fetchJson(`${API_BASE}/cases/${selectedCase.id}/logs`)
         ]);
         setSelectedCase(caseData);
         setCaseLogs(Array.isArray(logsData) ? logsData : []);
@@ -551,7 +545,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     };
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/scadenze/${editDeadline.id}`, {
+        fetchJson(`${API_BASE}/deadlines/${editDeadline.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -563,7 +557,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     await loadAll();
   };
 
-  // AMMINISTRATI DI SOSTEGNO (endpoints attuali in inglese: /guardianships)
+  // AMMINISTRATI DI SOSTEGNO -----------------------------------
   const openGuardian = async (g) => {
     if (!g || !g.id) return;
     if (view !== "guardianships") {
@@ -920,7 +914,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
     };
     const success = await runOrAlert(
       () =>
-        fetchJson(`${API_BASE}/fatture`, {
+        fetchJson(`${API_BASE}/invoices`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -935,7 +929,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
   const deleteInvoice = async (inv) => {
     if (!window.confirm("Eliminare questa fattura?")) return;
     const success = await runOrAlert(
-      () => fetchJson(`${API_BASE}/fatture/${inv.id}`, { method: "DELETE" }),
+      () => fetchJson(`${API_BASE}/invoices/${inv.id}`, { method: "DELETE" }),
       "Errore durante l'eliminazione della fattura"
     );
     if (success) {
@@ -1105,16 +1099,16 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
           <button onClick={() => setView("dashboard")} style={navBtn(view === "dashboard")}>
             Dashboard
           </button>
-          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}>
+          <button onClick={() => setView("clients")} style={navBtn(view === "clients")}> 
             Clienti
           </button>
-          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}>
+          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}> 
             Pratiche
           </button>
-          <button onClick={() => setView("guardianships")} style={navBtn(view === "guardianships")}>
+          <button onClick={() => setView("guardianships")} style={navBtn(view === "guardianships")}> 
             Amministrati (AdS)
           </button>
-          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}>
+          <button onClick={() => setView("invoices")} style={navBtn(view === "invoices")}> 
             Fatture
           </button>
           <button onClick={() => setView("deadlines")} style={navBtn(view === "deadlines")}>
@@ -1173,7 +1167,6 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
               </button>
             </div>
           )}
-
           {/* DASHBOARD */}
           {view === "dashboard" && (
             <>
@@ -1225,19 +1218,19 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
                   <hr />
                   <h4>Export rapido</h4>
                   <button
-                    onClick={() => doExport("clienti")}
+                    onClick={() => doExport("clients")}
                     style={{ ...btn, marginRight: 6, marginBottom: 4 }}
                   >
                     Clienti CSV
                   </button>
                   <button
-                    onClick={() => doExport("casi")}
+                    onClick={() => doExport("cases")}
                     style={{ ...btn, marginRight: 6, marginBottom: 4 }}
                   >
                     Pratiche CSV
                   </button>
                   <button
-                    onClick={() => doExport("fatture")}
+                    onClick={() => doExport("invoices")}
                     style={{ ...btn, marginRight: 6, marginBottom: 4 }}
                   >
                     Fatture CSV
@@ -1272,16 +1265,10 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
                 <div>
                   <button
                     style={{ ...btn, marginRight: 6 }}
-                    onClick={() => doExport("clienti")}
+                    onClick={() => doExport("clients")}
                   >
                     Export CSV
                   </button>
-<button
-  style={{ ...btn, marginRight: 6 }}
-  onClick={() => clientExpenseModal && setClientExpenseModal(null)}
-  hidden
-/>
-
                   <button style={btn} onClick={() => setShowNewClient(true)}>
                     + Nuovo cliente
                   </button>
@@ -1314,7 +1301,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
                     </button>
                   )}
                   <span style={{ fontSize: 12, color: "#6b7280" }}>
-                    {filteredClienti.length} risultati
+                    {filteredClients.length} risultati
                   </span>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1327,7 +1314,7 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredClienti.map((cl) => (
+                    {filteredClients.map((cl) => (
                       <tr key={cl.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
                         <td>{cl.name}</td>
                         <td>{cl.email}</td>
@@ -1335,17 +1322,10 @@ setGuardianships(Array.isArray(guardiansData) ? guardiansData : []);
                         <td>
                           <button onClick={() => editClient(cl)}>✏️</button>{" "}
                           <button onClick={() => deleteClient(cl)}>🗑️</button>
-<button onClick={async () => {
-  const clFull = await fetchJson(`${API_BASE}/clients/${cl.id}`);
-clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
-
-  setClientExpenseModal(clFull);
-}}>💸 Spese</button>{" "}
-
                         </td>
                       </tr>
                     ))}
-                    {filteredClienti.length === 0 && (
+                    {filteredClients.length === 0 && (
                       <tr>
                         <td colSpan="4">Nessun cliente</td>
                       </tr>
@@ -1410,7 +1390,7 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                 <div>
                   <button
                     style={{ ...btn, marginRight: 6 }}
-                    onClick={() => doExport("casi")}
+                    onClick={() => doExport("cases")}
                   >
                     Export CSV
                   </button>
@@ -1580,56 +1560,6 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                   <div style={card}>
                     <h3>Fatture collegate</h3>
                     <ul>
-<div style={card}>
-  <h3>Spese</h3>
-  <form onSubmit={async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const payload = {
-      date: form.date.value,
-      description: form.description.value,
-      amount: Number(form.amount.value || 0),
-      type: form.type.value,
-      documentRef: form.documentRef.value
-    };
-    await fetchJson(`${API_BASE}/cases/${selectedCase.id}/expenses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const caseData = await fetchJson(`${API_BASE}/cases/${selectedCase.id}`);
-    setSelectedCase(caseData);
-    form.reset();
-  }}>
-    <div style={{ display:"grid", gridTemplateColumns:"120px 1fr 140px 140px", gap:8 }}>
-      <input type="date" name="date" defaultValue={todayIso()} />
-      <input name="description" placeholder="Descrizione" />
-      <input type="number" name="amount" step="0.01" placeholder="€" />
-      <select name="type"><option value="spesa">Spesa</option><option value="diritti">Diritti</option><option value="contributo">Contributo</option></select>
-    </div>
-    <input name="documentRef" placeholder="Rif. documento (opzionale)" style={{ width:"100%", marginTop:6 }} />
-    <button style={{ ...btn, marginTop:8 }}>Aggiungi spesa</button>
-  </form>
-  <ul>
-    {selectedCase.expenses && selectedCase.expenses.length ? selectedCase.expenses.map(e => (
-      <li key={e.id}>
-        {e.date} – {e.description} – {euro(e.amount)} {e.invoiceId ? " · in fattura" : ""}
-        {!e.invoiceId && (
-          <>
-            {" "}
-            <button onClick={async () => {
-              await fetchJson(`${API_BASE}/expenses/${e.id}`, { method:"DELETE" });
-              const caseData = await fetchJson(`${API_BASE}/cases/${selectedCase.id}`);
-              setSelectedCase(caseData);
-            }}>🗑️</button>
-          </>
-        )}
-      </li>
-    )) : <li>Nessuna spesa</li>}
-  </ul>
-  <div style={{ fontSize:12, color:"#6b7280" }}>Le spese non fatturate saranno inserite automaticamente alla prossima fattura della pratica.</div>
-</div>
-
                       {selectedCase.invoices && selectedCase.invoices.length > 0 ? (
                         selectedCase.invoices.map((inv) => (
                           <li key={inv.id}>
@@ -1637,7 +1567,7 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                             {inv.totals ? euro(inv.totals.totale) : "-"}{" "}
                             <button onClick={() => deleteInvoice(inv)}>🗑️</button>{" "}
                             <a
-                              href={`${API_BASE}/fatture/${inv.id}/pdf`}
+                              href={`${API_BASE}/invoices/${inv.id}/pdf`}
                               target="_blank"
                               rel="noreferrer"
                             >
@@ -1705,7 +1635,7 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                 <div>
                   <button
                     style={{ ...btn, marginRight: 6 }}
-                    onClick={() => doExport("fatture")}
+                    onClick={() => doExport("invoices")}
                   >
                     Export CSV
                   </button>
@@ -1743,68 +1673,40 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                       <th>Data</th>
                       <th>Cliente</th>
                       <th>Pratica</th>
-                   <th>Totale</th>
-<th>Pagato</th>
-<th>Residuo</th>
-<th></th>
-
+                      <th>Totale</th>
                       <th></th>
                     </tr>
                   </thead>
-   <tbody>
-  {filteredInvoices.map((inv) => {
-    const paid = (inv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
-    const tot = inv.totals ? inv.totals.totale : 0;
-    const balance = Math.max(tot - paid, 0);
-    return (
-      <tr key={inv.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-        <td>{inv.number}</td>
-        <td>{inv.date}</td>
-        <td>{inv.clientName}</td>
-        <td>{inv.caseNumber}</td>
-        <td>{euro(tot)}</td>
-        <td>{euro(paid)}</td>
-        <td>{euro(balance)}</td>
-        <td>
-          <a href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer">📄</a>{" "}
-          <button onClick={() => deleteInvoice(inv)}>🗑️</button>{" "}
-          <button onClick={async () => {
-            const amount = Number(window.prompt("Importo pagamento (€):", balance));
-            if (!amount || amount <= 0) return;
-            await fetchJson(`${API_BASE}/invoices/${inv.id}/payments`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ amount, method: "bonifico" })
-            });
-            await loadAll();
-          }}>💳 Pagamento</button>{" "}
-          <button onClick={async () => {
-            const v = window.prompt("Inserisci importi separati da virgola (es. 300,200):");
-            if (!v) return;
-            const parts = v.split(",").map(x => ({ amount: Number(x.trim()) })).filter(x => x.amount > 0);
-            if (!parts.length) return;
-            await fetchJson(`${API_BASE}/invoices/${inv.id}/split`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ parts })
-            });
-            await loadAll();
-          }}>➗ Split</button>
-        </td>
-      </tr>
-    );
-  })}
-  {filteredInvoices.length === 0 && (
-    <tr>
-      <td colSpan={8}>Nessuna fattura</td>
-    </tr>
-  )}
-</tbody>
-</table>
-</div>
+                  <tbody>
+                    {filteredInvoices.map((inv) => (
+                      <tr key={inv.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                        <td>{inv.number}</td>
+                        <td>{inv.date}</td>
+                        <td>{inv.clientName}</td>
+                        <td>{inv.caseNumber}</td>
+                        <td>{inv.totals ? euro(inv.totals.totale) : "-"}</td>
+                        <td>
+                          <a
+                            href={`${API_BASE}/invoices/${inv.id}/pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            📄
+                          </a>{" "}
+                          <button onClick={() => deleteInvoice(inv)}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredInvoices.length === 0 && (
+                      <tr>
+                        <td colSpan="6">Nessuna fattura</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
-
 
           {/* SCADENZE */}
           {view === "deadlines" && (
@@ -1887,326 +1789,6 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
             </>
           )}
 
-{view === "guardianships" && (
-  <>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <h1>Amministrati di sostegno</h1>
-      <button style={btn} onClick={startNewGuardian}>+ Nuovo amministrato</button>
-    </div>
-    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
-      <div style={{ ...card, maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
-        <input
-          placeholder="Cerca amministrato..."
-          style={{ ...searchInput, width: "100%", marginBottom: 8 }}
-          onChange={async (e) => {
-            const q = e.target.value.trim();
-            const list = await fetchJson(`${API_BASE}/guardianships${q ? `?search=${encodeURIComponent(q)}` : ""}`);
-            setGuardianships(Array.isArray(list) ? list : []);
-          }}
-        />
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {guardianships.map(g => (
-            <li key={g.id}
-                onClick={() => openGuardian(g)}
-                style={{
-                  padding: 8,
-                  borderRadius: 8,
-                  cursor: "pointer",
-                  marginBottom: 6,
-                  background: selectedGuardian && selectedGuardian.id === g.id ? "#e0e7ff" : "#f9fafb",
-                  border: "1px solid #e5e7eb"
-                }}>
-              <div style={{ fontWeight: 600 }}>{g.fullName}</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
-                {g.fiscalCode || "-"} · saldo {euro((g.financialSummary?.balance) || 0)}
-              </div>
-            </li>
-          ))}
-          {guardianships.length === 0 && <li>Nessun amministrato</li>}
-        </ul>
-      </div>
-
-      <div>
-        {!selectedGuardian && <div style={card}>Seleziona un amministrato per aprire la scheda.</div>}
-        {selectedGuardian && (
-          <>
-            <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <h2 style={{ margin: 0 }}>{selectedGuardian.fullName}</h2>
-                <div style={{ fontSize: 12, padding: "4px 8px", background: guardianStatusColor(selectedGuardian.status), display: "inline-block", borderRadius: 6 }}>
-                  {selectedGuardian.status}
-                </div>
-              </div>
-              <div>
-                <button style={{ ...btn, marginRight: 8 }} onClick={() => startEditGuardian(selectedGuardian)}>Modifica</button>
-                <button style={{ ...btn, background: "#ef4444" }} onClick={() => deleteGuardian(selectedGuardian)}>Elimina</button>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div style={{ ...card }}>
-              <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                {guardianTabs.map(t => (
-                  <button key={t.id}
-                          onClick={() => setGuardianDetailTab(t.id)}
-                          style={{ ...btn, background: guardianDetailTab === t.id ? "#2563eb" : "#6b7280" }}>
-                    {t.label}
-                  </button>
-                ))}
-                <span style={{ fontSize: 12, color: "#6b7280", marginLeft: "auto" }}>
-                  Ultimo aggiornamento: {selectedGuardian.updatedAt ? formatDateTime(selectedGuardian.updatedAt) : "-"}
-                </span>
-              </div>
-
-              {/* Scheda */}
-              {guardianDetailTab === "overview" && (
-                <div>
-                  <p><b>CF:</b> {selectedGuardian.fiscalCode || "-"}</p>
-                  <p><b>Nato il:</b> {selectedGuardian.birthDate || "-"}</p>
-                  <p><b>Residenza:</b> {selectedGuardian.residence || "-"}</p>
-                  <p><b>Tribunale:</b> {selectedGuardian.court || "-"}</p>
-                  <p><b>Giudice tutelare:</b> {selectedGuardian.judge || "-"}</p>
-                  <p><b>Decreto nomina:</b> {selectedGuardian.decreeDate || "-"}</p>
-                  <p><b>Frequenza rendiconti:</b> {selectedGuardian.reportingFrequency || "-"}</p>
-                  <p><b>Prossima scadenza rendiconto:</b> {selectedGuardian.nextReportDue || "-"}</p>
-                  <hr />
-                  <p><b>Totale beni:</b> {selectedGuardian.assetSummary?.totalItems || 0} (valore {euro(selectedGuardian.assetSummary?.totalValue || 0)})</p>
-                  <p><b>Saldo economico:</b> {euro(selectedGuardian.financialSummary?.balance || 0)} (Entrate {euro(selectedGuardian.financialSummary?.totalIncome || 0)} / Uscite {euro(selectedGuardian.financialSummary?.totalExpense || 0)})</p>
-                </div>
-              )}
-
-              {/* Documenti */}
-              {guardianDetailTab === "documents" && (
-                <SectionList
-                  title="Documenti"
-                  items={selectedGuardian.documents || []}
-                  columns={[
-                    { k:"date", label:"Data", w:110 },
-                    { k:"title", label:"Titolo", w:260 },
-                    { k:"category", label:"Categoria", w:160 },
-                    { k:"reference", label:"Rif.", w:120 },
-                    { k:"link", label:"Link", w:160 }
-                  ]}
-                  onNew={() => openGuardianEntryModal("document")}
-                  onEdit={(item) => openGuardianEntryModal("document", item)}
-                  onDelete={(item) => deleteGuardianDocument(item)}
-                />
-              )}
-
-              {/* Inventario */}
-              {guardianDetailTab === "inventory" && (
-                <SectionList
-                  title="Inventario beni"
-                  items={selectedGuardian.assetInventory || []}
-                  columns={[
-                    { k:"label", label:"Bene", w:240 },
-                    { k:"category", label:"Categoria", w:140 },
-                    { k:"location", label:"Luogo", w:140 },
-                    { k:"quantity", label:"Q.tà", w:80 },
-                    { k:"value", label:"Valore", w:120, fmt:(v)=>euro(v||0) }
-                  ]}
-                  onNew={() => openGuardianEntryModal("inventory")}
-                  onEdit={(item) => openGuardianEntryModal("inventory", item)}
-                  onDelete={(item) => deleteInventoryItem(item)}
-                />
-              )}
-
-              {/* Finanza */}
-              {guardianDetailTab === "finance" && (
-                <SectionList
-                  title="Entrate / Uscite"
-                  items={selectedGuardian.financialMovements || []}
-                  columns={[
-                    { k:"date", label:"Data", w:110 },
-                    { k:"type", label:"Tipo", w:110 },
-                    { k:"category", label:"Categoria", w:140 },
-                    { k:"description", label:"Descrizione", w:260 },
-                    { k:"amount", label:"Importo", w:120, fmt:(v)=>euro(v||0) }
-                  ]}
-                  summaryExtra={
-                    <div style={{ marginTop: 8, fontSize: 13 }}>
-                      <b>Saldo:</b> {euro((selectedGuardian.financialSummary?.balance)||0)} — Entrate {euro((selectedGuardian.financialSummary?.totalIncome)||0)} · Uscite {euro((selectedGuardian.financialSummary?.totalExpense)||0)}
-                    </div>
-                  }
-                  onNew={() => openGuardianEntryModal("movement")}
-                  onEdit={(item) => openGuardianEntryModal("movement", item)}
-                  onDelete={(item) => deleteGuardianMovement(item)}
-                />
-              )}
-
-              {/* Rendiconti */}
-              {guardianDetailTab === "reports" && (
-                <SectionList
-                  title="Rendiconti"
-                  items={selectedGuardian.reports || []}
-                  columns={[
-                    { k:"title", label:"Titolo", w:220 },
-                    { k:"periodStart", label:"Dal", w:110 },
-                    { k:"periodEnd", label:"Al", w:110 },
-                    { k:"deliveredAt", label:"Consegnato", w:120 },
-                    { k:"status", label:"Stato", w:140 },
-                    { k:"protocol", label:"Protocollo", w:160 }
-                  ]}
-                  onNew={() => openGuardianEntryModal("report")}
-                  onEdit={(item) => openGuardianEntryModal("report", item)}
-                  onDelete={(item) => deleteGuardianReport(item)}
-                />
-              )}
-
-              {/* Depositi telematici */}
-              {guardianDetailTab === "filings" && (
-                <SectionList
-                  title="Depositi telematici"
-                  items={selectedGuardian.courtFilings || []}
-                  columns={[
-                    { k:"date", label:"Data", w:110 },
-                    { k:"subject", label:"Oggetto", w:260 },
-                    { k:"channel", label:"Canale", w:110 },
-                    { k:"registry", label:"Registro", w:140 },
-                    { k:"protocol", label:"Protocollo", w:160 },
-                    { k:"outcome", label:"Esito", w:140 }
-                  ]}
-                  onNew={() => openGuardianEntryModal("filing")}
-                  onEdit={(item) => openGuardianEntryModal("filing", item)}
-                  onDelete={(item) => deleteGuardianFiling(item)}
-                />
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-{clientExpenseModal && (
-  <Modal title={`Spese cliente · ${clientExpenseModal.name}`} onClose={() => setClientExpenseModal(null)}>
-    <form onSubmit={async (e) => {
-      e.preventDefault();
-      const f = e.target;
-      const payload = {
-        date: f.date.value,
-        description: f.description.value,
-        amount: Number(f.amount.value || 0),
-        type: f.type.value,
-        documentRef: f.documentRef.value
-      };
-      await fetchJson(`${API_BASE}/clients/${clientExpenseModal.id}/expenses`, {
-        method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload)
-      });
-      const refreshed = await fetchJson(`${API_BASE}/clients/${clientExpenseModal.id}`);
-      refreshed.expenses = await fetchJson(`${API_BASE}/clients/${clientExpenseModal.id}/expenses`);
-      setClientExpenseModal(refreshed);
-      f.reset();
-    }}>
-      <div style={{ display:"grid", gridTemplateColumns:"120px 1fr 140px 140px", gap:8 }}>
-        <input type="date" name="date" defaultValue={todayIso()} />
-        <input name="description" placeholder="Descrizione" />
-        <input type="number" name="amount" step="0.01" placeholder="€" />
-        <select name="type"><option value="spesa">Spesa</option><option value="diritti">Diritti</option><option value="contributo">Contributo</option></select>
-      </div>
-      <input name="documentRef" placeholder="Rif. documento (opz.)" style={{ width:"100%", marginTop:6 }} />
-      <button style={{ ...btn, marginTop:8 }}>Aggiungi</button>
-    </form>
-    <hr />
-    <div style={{ maxHeight: 260, overflowY:"auto" }}>
-      {(clientExpenseModal.expenses || []).map(e => (
-        <div key={e.id} style={{ display:"flex", justifyContent:"space-between", borderBottom:"1px solid #e5e7eb", padding:"6px 0" }}>
-          <div>{e.date} – {e.description} – {euro(e.amount)} {e.invoiceId ? " · in fattura" : ""}</div>
-          {!e.invoiceId && <button onClick={async () => {
-            await fetchJson(`${API_BASE}/expenses/${e.id}`, { method:"DELETE" });
-            const refreshed = await fetchJson(`${API_BASE}/clients/${clientExpenseModal.id}`);
-            refreshed.expenses = await fetchJson(`${API_BASE}/clients/${clientExpenseModal.id}/expenses`);
-            setClientExpenseModal(refreshed);
-          }}>🗑️</button>}
-        </div>
-      ))}
-      {(clientExpenseModal.expenses || []).length === 0 && <div>Nessuna spesa</div>}
-    </div>
-    <p style={{ fontSize:12, color:"#6b7280" }}>Le spese non fatturate saranno inserite automaticamente alla prossima fattura del cliente.</p>
-  </Modal>
-)}
-
-    {/* modale entry già presente nel tuo codice: guardianEntryModal */}
-    {guardianEntryModal && (
-      <Modal onClose={closeGuardianEntryModal} title={
-        guardianEntryModal.item ? "Modifica elemento" : "Nuovo elemento"
-      }>
-        {guardianEntryModal.type === "document" && (
-          <form onSubmit={submitGuardianDocument}>
-            <FieldText name="title" label="Titolo" def={guardianEntryModal.item?.title} required />
-            <FieldText name="category" label="Categoria" def={guardianEntryModal.item?.category} />
-            <FieldDate name="date" label="Data" def={guardianEntryModal.item?.date} />
-            <FieldText name="reference" label="Riferimento" def={guardianEntryModal.item?.reference} />
-            <FieldText name="link" label="Link" def={guardianEntryModal.item?.link} />
-            <FieldArea name="notes" label="Note" def={guardianEntryModal.item?.notes} />
-            <button style={btn} type="submit">{guardianEntryModal.item ? "Aggiorna" : "Aggiungi"}</button>
-          </form>
-        )}
-        {guardianEntryModal.type === "inventory" && (
-          <form onSubmit={submitInventoryItem}>
-            <FieldText name="label" label="Bene" def={guardianEntryModal.item?.label} required />
-            <FieldText name="category" label="Categoria" def={guardianEntryModal.item?.category} />
-            <FieldText name="location" label="Luogo" def={guardianEntryModal.item?.location} />
-            <FieldNumber name="quantity" label="Quantità" def={guardianEntryModal.item?.quantity ?? 1} />
-            <FieldNumber name="value" label="Valore" step="0.01" def={guardianEntryModal.item?.value ?? 0} />
-            <FieldArea name="notes" label="Note" def={guardianEntryModal.item?.notes} />
-            <button style={btn} type="submit">{guardianEntryModal.item ? "Aggiorna" : "Aggiungi"}</button>
-          </form>
-        )}
-        {guardianEntryModal.type === "movement" && (
-          <form onSubmit={submitGuardianMovement}>
-            <label>Tipo<br /><select name="type" defaultValue={guardianEntryModal.item?.type || "entrata"} style={{ width:"100%" }}>
-              <option value="entrata">Entrata</option>
-              <option value="uscita">Uscita</option>
-            </select></label><br />
-            <FieldNumber name="amount" label="Importo" step="0.01" def={guardianEntryModal.item?.amount ?? 0} required />
-            <FieldDate name="date" label="Data" def={guardianEntryModal.item?.date} />
-            <FieldText name="category" label="Categoria" def={guardianEntryModal.item?.category} />
-            <FieldText name="description" label="Descrizione" def={guardianEntryModal.item?.description} />
-            <FieldText name="reference" label="Riferimento" def={guardianEntryModal.item?.reference} />
-            <FieldArea name="notes" label="Note" def={guardianEntryModal.item?.notes} />
-            <button style={btn} type="submit">{guardianEntryModal.item ? "Aggiorna" : "Aggiungi"}</button>
-          </form>
-        )}
-        {guardianEntryModal.type === "report" && (
-          <form onSubmit={submitGuardianReport}>
-            <FieldText name="title" label="Titolo" def={guardianEntryModal.item?.title} required />
-            <FieldDate name="periodStart" label="Periodo dal" def={guardianEntryModal.item?.periodStart} />
-            <FieldDate name="periodEnd" label="Periodo al" def={guardianEntryModal.item?.periodEnd} />
-            <FieldDate name="deliveredAt" label="Consegnato il" def={guardianEntryModal.item?.deliveredAt} />
-            <label>Stato<br /><select name="status" defaultValue={guardianEntryModal.item?.status || "in preparazione"} style={{ width:"100%" }}>
-              <option value="in preparazione">In preparazione</option>
-              <option value="programmato">Programmato</option>
-              <option value="inviato">Inviato</option>
-              <option value="depositato">Depositato</option>
-              <option value="consegnato">Consegnato</option>
-              <option value="approvato">Approvato</option>
-              <option value="bozza">Bozza</option>
-            </select></label><br />
-            <FieldText name="protocol" label="Protocollo" def={guardianEntryModal.item?.protocol} />
-            <FieldText name="attachment" label="Allegato (URL)" def={guardianEntryModal.item?.attachment} />
-            <FieldArea name="summary" label="Sommario" def={guardianEntryModal.item?.summary} />
-            <FieldArea name="notes" label="Note" def={guardianEntryModal.item?.notes} />
-            <button style={btn} type="submit">{guardianEntryModal.item ? "Aggiorna" : "Aggiungi"}</button>
-          </form>
-        )}
-        {guardianEntryModal.type === "filing" && (
-          <form onSubmit={submitGuardianFiling}>
-            <FieldText name="subject" label="Oggetto" def={guardianEntryModal.item?.subject} required />
-            <FieldDate name="date" label="Data" def={guardianEntryModal.item?.date} />
-            <FieldText name="channel" label="Canale" def={guardianEntryModal.item?.channel || "PCT"} />
-            <FieldText name="registry" label="Registro" def={guardianEntryModal.item?.registry} />
-            <FieldText name="protocol" label="Protocollo" def={guardianEntryModal.item?.protocol} />
-            <FieldText name="outcome" label="Esito" def={guardianEntryModal.item?.outcome} />
-            <FieldText name="attachment" label="Allegato (URL)" def={guardianEntryModal.item?.attachment} />
-            <FieldArea name="notes" label="Note" def={guardianEntryModal.item?.notes} />
-            <button style={btn} type="submit">{guardianEntryModal.item ? "Aggiorna" : "Aggiungi"}</button>
-          </form>
-        )}
-      </Modal>
-    )}
-  </>
-)}
-
-
           {/* DATI STUDIO */}
           {view === "studio" && studio && (
             <>
@@ -2229,19 +1811,19 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                   Scarica i dati attuali in formato CSV o Excel. Il CSV puoi poi riaprirlo e reimportarlo.
                 </p>
                 <button
-                  onClick={() => doExport("clienti")}
+                  onClick={() => doExport("clients")}
                   style={{ ...btn, marginRight: 6, marginBottom: 6 }}
                 >
                   Clienti CSV
                 </button>
                 <button
-                  onClick={() => doExport("casi")}
+                  onClick={() => doExport("cases")}
                   style={{ ...btn, marginRight: 6, marginBottom: 6 }}
                 >
                   Pratiche CSV
                 </button>
                 <button
-                  onClick={() => doExport("fatture")}
+                  onClick={() => doExport("invoices")}
                   style={{ ...btn, marginRight: 6, marginBottom: 6 }}
                 >
                   Fatture CSV
@@ -2262,9 +1844,9 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
                     Tipo da importare
                     <br />
                     <select value={importType} onChange={(e) => setImportType(e.target.value)}>
-                      <option value="clienti">Clienti</option>
-                      <option value="casi">Pratiche</option>
-                      <option value="fatture">Fatture</option>
+                      <option value="clients">Clienti</option>
+                      <option value="cases">Pratiche</option>
+                      <option value="invoices">Fatture</option>
                     </select>
                   </label>
                   <br />
@@ -2377,7 +1959,7 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
               Cliente<br />
               <select name="clientId" style={{ width: "100%" }}>
                 <option value="">-- nessuno --</option>
-                {clienti.map((cl) => (
+                {clients.map((cl) => (
                   <option key={cl.id} value={cl.id}>
                     {cl.name}
                   </option>
@@ -2429,7 +2011,7 @@ clFull.expenses = await fetchJson(`${API_BASE}/clients/${clFull.id}/expenses`);
               Cliente<br />
               <select name="clientId" style={{ width: "100%" }}>
                 <option value="">-- nessuno --</option>
-                {clienti.map((cl) => (
+                {clients.map((cl) => (
                   <option key={cl.id} value={cl.id}>
                     {cl.name}
                   </option>
@@ -2737,7 +2319,7 @@ function GuardianForm({ initialData, onSubmit, onCancel }) {
       <br />
       <label>
         Note operative aggiuntive<br />
-        <textarea name="notes" defaultValue={data.notes} style={{ width: "100%", minHeight: 80 }} />
+        <textarea name="notes" defaultValue={data.notes || ""} style={{ width: "100%", minHeight: 80 }} />
       </label>
       <br />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -3031,50 +2613,6 @@ function CalendarView({ items, year, month, onSelectDeadline, onPrev, onNext, on
           );
         })}
       </div>
-    </div>
-  );
-}
-function FieldText({ name, label, def="", required }) {
-  return (<label>{label}<br /><input name={name} defaultValue={def} required={required} style={{ width:"100%" }} /></label>);
-}
-function FieldDate({ name, label, def="" }) {
-  return (<label>{label}<br /><input type="date" name={name} defaultValue={def} style={{ width:"100%" }} /></label>);
-}
-function FieldArea({ name, label, def="" }) {
-  return (<label>{label}<br /><textarea name={name} defaultValue={def} style={{ width:"100%", minHeight:80 }} /></label>);
-}
-function FieldNumber({ name, label, def=0, step="1", required }) {
-  return (<label>{label}<br /><input type="number" step={step} name={name} defaultValue={def} required={required} style={{ width:"100%" }} /></label>);
-}
-
-function SectionList({ title, items, columns, onNew, onEdit, onDelete, summaryExtra }) {
-  return (
-    <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-        <h3 style={{ margin:0 }}>{title}</h3>
-        {onNew && <button style={btn} onClick={onNew}>+ Nuovo</button>}
-      </div>
-      <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead>
-            <tr>{columns.map(c => <th key={c.k} style={{ minWidth:c.w || 100, textAlign:"left" }}>{c.label}</th>)}
-                <th></th></tr>
-          </thead>
-          <tbody>
-            {items.map(it => (
-              <tr key={it.id} style={{ borderBottom:"1px solid #e5e7eb" }}>
-                {columns.map(c => <td key={c.k}>{c.fmt ? c.fmt(it[c.k]) : (it[c.k] || "")}</td>)}
-                <td>
-                  {onEdit && <button onClick={() => onEdit(it)}>✏️</button>}{" "}
-                  {onDelete && <button onClick={() => onDelete(it)}>🗑️</button>}
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && <tr><td colSpan={columns.length+1}>Nessun elemento</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      {summaryExtra}
     </div>
   );
 }
