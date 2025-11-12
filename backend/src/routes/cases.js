@@ -306,6 +306,8 @@ function buildTimeline(caseId) {
       time: d.time || "",
       note: d.note || "",
       createdAt: `${d.date}${d.time ? `T${d.time}` : "T00:00"}`,
+      status: d.completedAt ? "completed" : "open",
+      completedAt: d.completedAt || null,
     }));
 
   const expenses = (db.expenses || [])
