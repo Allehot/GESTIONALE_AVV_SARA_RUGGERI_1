@@ -132,7 +132,7 @@ function ExpensesModal({ client, onClose }) {
   async function del(id) {
     try {
       setErr("");
-      await api.delExpense(id);
+      await api.deleteClientExpense(client.id, id);
       await load();
     } catch (e) {
       setErr("Errore eliminazione spesa");

@@ -27,8 +27,17 @@ export const api = {
   // clients
   clients: () => request(`${API}/clienti`),
   createClient: (payload) => json(`${API}/clienti`, { method: "POST", body: payload }),
+  client: (id) => request(`${API}/clienti/${id}`),
+  updateClient: (id, payload) => json(`${API}/clienti/${id}`, { method: "PUT", body: payload }),
+  deleteClient: (id) => json(`${API}/clienti/${id}`, { method: "DELETE" }),
+  clientCases: (id) => request(`${API}/clienti/${id}/cases`),
+  clientInvoices: (id) => request(`${API}/clienti/${id}/invoices`),
   clientExpenses: (id) => request(`${API}/clienti/${id}/expenses`),
   addClientExpense: (id, payload) => json(`${API}/clienti/${id}/expenses`, { method: "POST", body: payload }),
+  deleteClientExpense: (clientId, expenseId) =>
+    json(`${API}/clienti/${clientId}/expenses/${expenseId}`, { method: "DELETE" }),
+  delExpense: (clientId, expenseId) =>
+    json(`${API}/clienti/${clientId}/expenses/${expenseId}`, { method: "DELETE" }),
 
   // cases
   cases: () => request(`${API}/casi`),
@@ -95,6 +104,9 @@ export const api = {
   reportDashboard: () => request(`${API}/reports/dashboard`),
   reportRecenti: () => request(`${API}/reports/recenti`),
   reportMesi: () => request(`${API}/reports/mesi`),
+  dashboard: () => request(`${API}/reports/dashboard`),
+  recenti: () => request(`${API}/reports/recenti`),
+  mesi: () => request(`${API}/reports/mesi`),
 
   // files
   exportExcel: () => fetch(`${API}/files/export/excel`).then((r) => r.blob()),
