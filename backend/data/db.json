@@ -8,280 +8,462 @@
     }
   ],
   "studio": {
-    "name": "Studio Legale Avv. Sara Ruggeri",
-    "address": "Pavullo nel Frignano (MO)",
-    "vatNumber": "03840750362",
-    "fiscalCode": "RGGSRA91M60G393B",
-    "email": "avv.sararuggeri@gmail.com",
-    "Pec": "Sara.ruggeri@ordineavvmodena.it",
-    "phone": "+39 3926061553",
-    "Fax": "+39 053622584",
-    "cassaPerc": 4,
-    "ivaPerc": 22,
-    "ritenutaPerc": 20,
-    "bollo": 2,
-    "logoPath": "/assets/logo-studio.png"
+    "name": "Studio Legale Avv. Sara Ruggeri"
   },
   "clients": [
     {
-      "id": "98bf8007-524f-43b8-bc1b-3c11da65950d",
-      "name": "Alessandro Verucchi",
-      "fiscalCode": "",
-      "vatNumber": "",
-      "email": "",
-      "pec": "",
-      "phone": "3385790274",
-      "address": "Via Casa Parenti 19",
-      "notes": ""
+      "id": "c1",
+      "name": "Mario Rossi",
+      "fiscalCode": "RSSMRA80A01H501Z",
+      "email": "mario@example.com",
+      "subject": "xxxxx",
+      "court": "xxx",
+      "section": "xx",
+      "judge": "xx",
+      "rgNumber": "xxxx",
+      "caseType": "civile",
+      "proceedingType": "giudiziale",
+      "status": "aperta",
+      "value": 0
     },
     {
-      "id": "2222",
-      "name": "pippo",
-      "fiscalCode": "mmmm",
+      "id": "95ed408b-d71d-44b6-968b-e469ecb255fb",
+      "name": "jfjyhfkjf",
+      "fiscalCode": "",
       "vatNumber": "",
       "email": "",
       "pec": "",
       "phone": "",
       "address": "",
       "notes": ""
+    },
+    {
+      "id": "72e68667-7d83-482b-bf61-32491a83224c",
+      "name": "Nuovo cliente",
+      "fiscalCode": "",
+      "vatNumber": "",
+      "email": "",
+      "pec": "",
+      "phone": "",
+      "address": "",
+      "notes": ""
+    },
+    {
+      "id": "1c43853d-413e-4ebf-8a94-83962afa7e00",
+      "name": "gianni",
+      "fiscalCode": "ppp",
+      "vatNumber": "ppiòjj",
+      "email": "nnn",
+      "pec": "",
+      "phone": ",,,,,",
+      "address": "",
+      "notes": ""
     }
   ],
   "cases": [
     {
-      "id": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "pr1",
+      "number": "PR-2025-0001",
+      "clientId": "c1",
+      "subject": "Causa demo",
+      "court": "Modena",
+      "status": "aperta",
+      "createdAt": "2025-11-05T00:00:00.000Z"
+    },
+    {
+      "id": "7c31669e-2029-4e7b-a8b4-17e01aec2a92",
       "number": "PR-2025-0002",
-      "clientId": "98bf8007-524f-43b8-bc1b-3c11da65950d",
-      "subject": "SSSS",
-      "court": "Tribunale di Modena",
+      "clientId": "c1",
+      "subject": "jhfjhfhj",
+      "court": "",
       "section": "",
       "judge": "",
-      "rgNumber": "1111",
-      "caseType": "penale",
-      "proceedingType": "stragiudiziale",
+      "rgNumber": "",
+      "caseType": "civile",
+      "proceedingType": "giudiziale",
       "status": "aperta",
       "value": 0,
       "notes": "",
-      "createdAt": "2025-10-31T13:03:03.858Z"
+      "createdAt": "2025-11-05T14:44:36.484Z"
+    },
+    {
+      "id": "459c868a-67b7-46b6-bb75-9526b6139935",
+      "number": "PR-2025-0003",
+      "clientId": "c1",
+      "subject": "cavolo",
+      "court": "",
+      "section": "",
+      "judge": "",
+      "rgNumber": "",
+      "caseType": "civile",
+      "proceedingType": "giudiziale",
+      "status": "aperta",
+      "value": 0,
+      "notes": "",
+      "createdAt": "2025-11-05T14:46:04.808Z"
+    },
+    {
+      "id": "129cec57-16f1-47d4-9803-6acce6ff4634",
+      "number": "PR-CIV-2025-0001",
+      "clientId": "1c43853d-413e-4ebf-8a94-83962afa7e00",
+      "subject": "sss",
+      "court": "ss",
+      "section": "sss",
+      "judge": "ss",
+      "rgNumber": "ss",
+      "caseType": "civile",
+      "proceedingType": "giudiziale",
+      "status": "aperta",
+      "value": 2000,
+      "notes": "",
+      "createdAt": "2025-11-10T13:36:08.981Z",
+      "updatedAt": "2025-11-10T13:36:26.690Z"
+    },
+    {
+      "id": "b10570c8-df4e-4b8b-8c74-636662e13409",
+      "number": "PR-CIV-2025-0002",
+      "clientId": "c1",
+      "subject": "",
+      "court": "",
+      "section": "",
+      "judge": "",
+      "rgNumber": "",
+      "caseType": "penale",
+      "proceedingType": "giudiziale",
+      "status": "aperta",
+      "value": 0,
+      "notes": "",
+      "createdAt": "2025-11-10T13:37:13.132Z",
+      "updatedAt": "2025-11-10T13:37:19.891Z"
     }
   ],
-  "deadlines": [],
-  "documents": [],
-  "activities": [],
-  "expenses": [
+  "deadlines": [
     {
-      "id": "e510dd87-87c7-475f-9432-ad934e3865dc",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "5754dfde-cdc7-4bd8-a7a4-9dc3b3b0b192",
+      "caseId": "pr1",
       "date": "2025-11-04",
-      "description": "",
-      "amount": 0,
-      "type": "spesa",
-      "documentRef": ""
+      "time": "09:35",
+      "type": "deposito",
+      "title": "",
+      "note": "",
+      "createdAt": "2025-11-07T08:34:18.580Z"
     },
     {
-      "id": "e6df17f3-1a30-4695-a9cb-b44e3b04ab96",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "date": "2025-11-04",
-      "description": "",
-      "amount": 0,
-      "type": "spesa",
-      "documentRef": ""
+      "id": "d1",
+      "title": "Udienza",
+      "date": "2025-11-25",
+      "caseId": "pr1"
     },
     {
-      "id": "b7eaa971-e228-40fb-aed5-8056159e5e71",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "date": "2025-11-04",
-      "description": "",
-      "amount": 450,
-      "type": "spesa",
-      "documentRef": ""
+      "id": "ebdab678-3dc4-4755-a869-1965df36e1c2",
+      "caseId": "459c868a-67b7-46b6-bb75-9526b6139935",
+      "date": "2025-11-27",
+      "time": "17:58",
+      "type": "udienza",
+      "title": "udienza",
+      "note": "",
+      "createdAt": "2025-11-10T12:53:13.938Z"
     }
   ],
   "invoices": [
     {
-      "id": "d41ea7fb-2bb7-431d-80d0-e2674a71fec1",
-      "number": "FAT-2025-0002",
-      "date": "2025-10-31",
-      "clientId": "98bf8007-524f-43b8-bc1b-3c11da65950d",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "f1",
+      "number": "FAT-2025-0001",
+      "date": "2025-11-01",
+      "clientId": "c1",
+      "caseId": "pr1",
       "lines": [
         {
           "type": "manual",
-          "description": "2500",
-          "amount": 200
+          "description": "Parcella",
+          "amount": 100
         }
       ],
-      "notes": "",
       "totals": {
-        "imponibile": 200,
-        "cassa": 8,
-        "iva": 45.76,
-        "ritenuta": 40,
-        "bollo": 2,
-        "totale": 215.76
+        "totale": 100
       },
-      "status": "emessa"
+      "status": "suddivisa",
+      "payments": [],
+      "splitChildren": [
+        "eb2dfb68-deaf-4aa0-8705-ab095896bd41",
+        "d355220c-5129-40d0-a823-d5d120816521"
+      ]
     },
     {
-      "id": "49b1da40-0290-45c2-ac57-acff243c9256",
-      "number": "FAT-2025-0003",
-      "date": "2025-11-04",
-      "clientId": "2222",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "eb2dfb68-deaf-4aa0-8705-ab095896bd41",
+      "number": "FAT-2025-0002",
+      "date": "2025-11-01",
+      "clientId": "c1",
+      "caseId": "pr1",
       "lines": [
         {
-          "type": "expense",
-          "description": "",
-          "amount": 0
-        },
+          "type": "manual",
+          "description": "Parcella",
+          "amount": 50
+        }
+      ],
+      "notes": "Quota derivata da fattura FAT-2025-0001",
+      "totals": {
+        "imponibile": 50,
+        "cassa": 0,
+        "iva": 0,
+        "ritenuta": 0,
+        "bollo": 0,
+        "totale": 50
+      },
+      "status": "parziale",
+      "parentInvoiceId": "f1",
+      "payments": [
         {
-          "type": "expense",
-          "description": "",
-          "amount": 0
-        },
-        {
-          "type": "expense",
-          "description": "",
-          "amount": 450
-        },
+          "id": "f3abb95b-1e66-4464-8c19-366db22f8dd9",
+          "date": "2025-11-05",
+          "amount": 10,
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "d355220c-5129-40d0-a823-d5d120816521",
+      "number": "FAT-2025-0003",
+      "date": "2025-11-01",
+      "clientId": "c1",
+      "caseId": "pr1",
+      "lines": [
         {
           "type": "manual",
-          "description": "650",
+          "description": "Parcella",
+          "amount": 50
+        }
+      ],
+      "notes": "Quota derivata da fattura FAT-2025-0001",
+      "totals": {
+        "imponibile": 50,
+        "cassa": 0,
+        "iva": 0,
+        "ritenuta": 0,
+        "bollo": 0,
+        "totale": 50
+      },
+      "status": "pagata",
+      "parentInvoiceId": "f1",
+      "payments": [
+        {
+          "id": "d082b4b7-a69b-45ff-ab8a-dca34339ef6b",
+          "date": "2025-11-05",
+          "amount": 50,
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "6b3537a3-5076-4391-90e1-6b2a62bbec9d",
+      "number": "FAT-2025-0004",
+      "date": "2025-11-10",
+      "clientId": "c1",
+      "caseId": "pr1",
+      "lines": [
+        {
+          "description": "Onorario",
+          "amount": 1500
+        }
+      ],
+      "notes": "",
+      "totals": {
+        "imponibile": 1500,
+        "cassa": 0,
+        "iva": 0,
+        "ritenuta": 0,
+        "bollo": 0,
+        "totale": 1500
+      },
+      "status": "emessa",
+      "payments": []
+    },
+    {
+      "id": "25f54485-a34f-4003-8e17-271429ba5fa3",
+      "number": "FAT-2025-0005",
+      "date": "2025-11-10",
+      "dueDate": null,
+      "clientId": "c1",
+      "caseId": null,
+      "guardianId": null,
+      "lines": [
+        {
+          "type": "manual",
+          "description": "",
           "amount": 0
         }
       ],
       "notes": "",
       "totals": {
-        "imponibile": 450,
-        "cassa": 18,
-        "iva": 102.96,
-        "ritenuta": 90,
-        "bollo": 2,
-        "totale": 482.96
+        "imponibile": 0,
+        "cassa": 0,
+        "iva": 0,
+        "ritenuta": 0,
+        "bollo": 0,
+        "totale": 0
       },
-      "status": "emessa"
+      "status": "emessa",
+      "payments": [],
+      "attachedExpenseIds": []
+    },
+    {
+      "id": "7c2ec21e-96bc-4519-9673-55ede1d3ebfc",
+      "number": "FAT-2025-0006",
+      "date": "2025-11-10",
+      "dueDate": null,
+      "clientId": "1c43853d-413e-4ebf-8a94-83962afa7e00",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
+      "guardianId": null,
+      "lines": [
+        {
+          "type": "manual",
+          "description": "Onorario",
+          "amount": 3600
+        }
+      ],
+      "notes": "",
+      "totals": {
+        "imponibile": 3600,
+        "cassa": 0,
+        "iva": 0,
+        "ritenuta": 0,
+        "bollo": 2,
+        "totale": 3602
+      },
+      "status": "emessa",
+      "payments": [],
+      "attachedExpenseIds": []
+    }
+  ],
+  "expenses": [
+    {
+      "id": "b7d04125-5f53-4e89-9817-ccbe7673da05",
+      "clientId": "95ed408b-d71d-44b6-968b-e469ecb255fb",
+      "caseId": null,
+      "date": "2025-11-05",
+      "description": "111",
+      "amount": 150,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "64327517-1c7a-44b2-8041-8835e06a02a7",
+      "clientId": "95ed408b-d71d-44b6-968b-e469ecb255fb",
+      "caseId": null,
+      "date": "2025-11-05",
+      "description": "",
+      "amount": 1011,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "f9495502-40bd-40c1-a2c1-2b95c81bacc7",
+      "caseId": "459c868a-67b7-46b6-bb75-9526b6139935",
+      "date": "2025-11-10",
+      "description": "pippo",
+      "amount": 500,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "67aceeac-4426-4ff6-b1f3-f992c3bf0f53",
+      "clientId": "95ed408b-d71d-44b6-968b-e469ecb255fb",
+      "caseId": null,
+      "date": "2025-11-10",
+      "description": "",
+      "amount": 1111,
+      "type": "spesa",
+      "documentRef": ""
+    },
+    {
+      "id": "694e6020-419e-42ac-9655-e288689082e7",
+      "caseId": "pr1",
+      "date": "2025-11-10",
+      "description": "5555",
+      "amount": 555,
+      "type": "spesa",
+      "documentRef": "",
+      "billedInvoiceId": null
+    },
+    {
+      "id": "e0fa419f-8211-427c-8149-d7c97f7d13b6",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
+      "date": "2025-11-10",
+      "description": "",
+      "amount": 550.22,
+      "type": "spesa",
+      "documentRef": "",
+      "billedInvoiceId": null
     }
   ],
   "logs": [
     {
-      "id": "5efb7658-0d95-4120-b3c0-4dcc995e5094",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "d0582604-46ad-468d-978b-fe48834e1e93",
+      "caseId": "459c868a-67b7-46b6-bb75-9526b6139935",
+      "action": "scadenza-creata",
+      "detail": "udienza: 2025-11-27 - udienza",
+      "createdAt": "2025-11-10T12:53:13.938Z"
+    },
+    {
+      "id": "6766cf95-93f0-49b6-9379-bd80d8ac0866",
+      "caseId": "459c868a-67b7-46b6-bb75-9526b6139935",
+      "action": "spesa-aggiunta",
+      "detail": "pippo € 500.00",
+      "createdAt": "2025-11-10T12:53:15.081Z"
+    },
+    {
+      "id": "3ada9581-c88d-4efd-8b6c-a680dc720984",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
       "action": "creazione-pratica",
-      "detail": "Creata pratica: PR-2025-0002 - SSSS",
-      "createdAt": "2025-10-31T13:03:03.858Z"
+      "detail": "Creata pratica: PR-CIV-2025-0001 - sss",
+      "createdAt": "2025-11-10T13:36:08.981Z"
     },
     {
-      "id": "36492779-f4bc-4656-aa0b-6272bd5bceab",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "fattura-emessa",
-      "detail": "Fattura FAT-2025-0002 per € 215.76",
-      "createdAt": "2025-10-31T13:03:22.022Z"
-    },
-    {
-      "id": "8f47d690-18de-444a-b862-8bb8b2f447b2",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-creata",
-      "detail": "udienza: 2025-10-31 - ",
-      "createdAt": "2025-10-31T13:03:50.597Z"
-    },
-    {
-      "id": "a969da79-a3ec-4b39-914c-5158edc37093",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "nota-manuale",
-      "detail": "pippo",
-      "createdAt": "2025-10-31T13:03:56.756Z"
-    },
-    {
-      "id": "4acb9815-2c65-456d-bcc2-be988bdd1187",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-eliminata",
-      "detail": "",
-      "createdAt": "2025-10-31T13:07:32.145Z"
-    },
-    {
-      "id": "3570da63-b058-4e14-b761-e23b7c803f1c",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-creata",
-      "detail": "scadenza: 2025-10-31 - pippo franco in galera",
-      "createdAt": "2025-10-31T13:07:43.019Z"
-    },
-    {
-      "id": "17faf208-99e9-45c2-9cb6-6e661b77c7c1",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-eliminata",
-      "detail": "pippo franco in galera",
-      "createdAt": "2025-10-31T13:13:43.797Z"
-    },
-    {
-      "id": "2887a499-7b7a-4460-858d-afc6eb0cce9d",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "ad04fffa-f4f0-4c2f-803c-4afb19750b39",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
       "action": "modifica-pratica",
       "detail": "Pratica modificata",
-      "createdAt": "2025-10-31T13:30:59.084Z"
+      "createdAt": "2025-11-10T13:36:26.690Z"
     },
     {
-      "id": "dfcb676e-5c10-4545-957e-8ef6eade27e8",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-creata",
-      "detail": "udienza: 2025-10-31 - ",
-      "createdAt": "2025-10-31T13:31:07.119Z"
+      "id": "1d71a86f-7585-4ef2-8b9d-14ee0f1d826a",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
+      "action": "spesa-aggiunta",
+      "detail": "spesa € 550.22",
+      "createdAt": "2025-11-10T13:36:40.445Z"
     },
     {
-      "id": "ae331fc2-e58e-4b3b-90b4-5dbf4d599332",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "scadenza-eliminata",
-      "detail": "",
-      "createdAt": "2025-10-31T13:31:14.278Z"
+      "id": "45900c2c-72f6-4a47-8b06-ed9e58d76ac9",
+      "caseId": "129cec57-16f1-47d4-9803-6acce6ff4634",
+      "action": "fattura-emessa",
+      "detail": "Fattura FAT-2025-0006 per € 3602.00",
+      "createdAt": "2025-11-10T13:36:41.551Z"
     },
     {
-      "id": "8903eb52-7492-4f22-9b9a-877f5abd934e",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
+      "id": "701cdd52-c9e9-415c-9240-13a77bbd131d",
+      "caseId": "b10570c8-df4e-4b8b-8c74-636662e13409",
+      "action": "creazione-pratica",
+      "detail": "Creata pratica: PR-CIV-2025-0002 - ",
+      "createdAt": "2025-11-10T13:37:13.132Z"
+    },
+    {
+      "id": "79a769b3-733d-4741-917f-ab232ca47cc7",
+      "caseId": "b10570c8-df4e-4b8b-8c74-636662e13409",
       "action": "modifica-pratica",
       "detail": "Pratica modificata",
-      "createdAt": "2025-11-03T13:12:38.339Z"
-    },
-    {
-      "id": "68a03ce1-eaed-446e-88d2-ad40fed1ddfb",
-      "caseId": "3ea697bd-9db6-4b45-9c2c-06e2b77a4efc",
-      "action": "fattura-emessa",
-      "detail": "Fattura FAT-2025-0003 per € 482.96",
-      "createdAt": "2025-11-04T14:13:17.425Z"
+      "createdAt": "2025-11-10T13:37:19.891Z"
     }
   ],
   "sequences": {
-    "case": 2,
-    "invoice": 3
+    "case": 3,
+    "invoice": 6,
+    "caseCivil": 2
   },
   "guardianships": [
     {
-      "id": "707c02f9-b3a5-40e7-a73c-6874c794651a",
-      "fullName": "cncvncvn",
-      "birthDate": "2025-11-05",
-      "fiscalCode": "vvvv",
-      "residence": "vvv",
-      "status": "attivo",
-      "supportLevel": "vvv",
-      "court": "vv",
-      "judge": "vv",
-      "decreeDate": "2025-11-14",
-      "nextReportDue": "2025-11-08",
-      "reportingFrequency": "vvvv",
-      "lastReportSent": "2025-11-08",
-      "income": "vvv",
-      "healthNotes": "",
-      "socialServicesContact": "vvv",
-      "familyContacts": "vv",
-      "notes": "",
-      "documents": [],
-      "assetInventory": [],
-      "financialMovements": [],
-      "reports": [],
-      "courtFilings": [],
-      "createdAt": "2025-11-04T14:07:55.140Z",
-      "updatedAt": "2025-11-04T14:07:55.140Z"
-    },
-    {
-      "id": "8794e844-291e-4927-a297-822dda4b10dc",
-      "fullName": "pippo",
+      "id": "0cd6b3ea-6a17-4fc5-9f42-95643c7eb7b7",
+      "fullName": "pippo franco",
       "birthDate": "",
       "fiscalCode": "",
       "residence": "",
@@ -289,22 +471,51 @@
       "supportLevel": "",
       "court": "",
       "judge": "",
-      "decreeDate": "",
-      "nextReportDue": "",
-      "reportingFrequency": "",
-      "lastReportSent": "",
-      "income": "",
-      "healthNotes": "",
-      "socialServicesContact": "",
-      "familyContacts": "",
-      "notes": "",
+      "createdAt": "2025-11-05T14:45:34.472Z",
+      "updatedAt": "2025-11-07T08:25:02.413Z",
+      "notes": [],
       "documents": [],
-      "assetInventory": [],
-      "financialMovements": [],
-      "reports": [],
-      "courtFilings": [],
-      "createdAt": "2025-11-04T14:11:56.452Z",
-      "updatedAt": "2025-11-04T14:11:56.452Z"
+      "inventory": [],
+      "incomes": [],
+      "expenses": [],
+      "movements": [],
+      "deposits": [
+        {
+          "id": "c23ca730-86ad-4780-89ea-84366ae9de08",
+          "date": "2025-11-07",
+          "amount": 150,
+          "note": ""
+        }
+      ],
+      "balance": 0
+    },
+    {
+      "id": "24313149-ed44-4c4b-aa48-37bb4ced98e8",
+      "fullName": "xcaccs",
+      "birthDate": "",
+      "fiscalCode": "",
+      "residence": "",
+      "status": "attivo",
+      "supportLevel": "",
+      "court": "",
+      "judge": "",
+      "createdAt": "2025-11-10T13:15:59.644Z",
+      "updatedAt": "2025-11-10T13:38:51.005Z",
+      "notes": [],
+      "documents": [],
+      "inventory": [],
+      "incomes": [
+        {
+          "id": "4e0d76e4-ba69-4b8c-a03a-fb287c0944fc",
+          "date": "2025-11-10",
+          "amount": 6555,
+          "note": ""
+        }
+      ],
+      "expenses": [],
+      "movements": [],
+      "deposits": [],
+      "balance": 0
     }
   ]
 }
