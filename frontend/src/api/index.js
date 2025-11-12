@@ -75,9 +75,23 @@ export const api = {
   updateCaseNumberingConfig: (payload) => json(`${API}/casi/numbering-config`, { method: "PUT", body: payload }),
 
   // deadlines globali
-  deadlines: () => request(`${API}/deadlines`),
+  deadlines: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.caseId) searchParams.set("caseId", params.caseId);
+    if (params.from) searchParams.set("from", params.from);
+    if (params.to) searchParams.set("to", params.to);
+    if (params.status) searchParams.set("status", params.status);
+    if (typeof params.includeCompleted === "boolean") {
+      searchParams.set("includeCompleted", String(params.includeCompleted));
+    }
+    const qs = searchParams.toString();
+    const url = qs ? `${API}/deadlines?${qs}` : `${API}/deadlines`;
+    return request(url);
+  },
   addDeadline: (payload) => json(`${API}/deadlines`, { method: "POST", body: payload }),
   deleteDeadline: (id) => json(`${API}/deadlines/${id}`, { method: "DELETE" }),
+  completeDeadline: (id) => json(`${API}/deadlines/${id}/complete`, { method: "POST" }),
+  reopenDeadline: (id) => json(`${API}/deadlines/${id}/reopen`, { method: "POST" }),
 
   // invoices
   invoices: () => request(`${API}/fatture`),

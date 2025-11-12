@@ -45,13 +45,15 @@ router.get("/dashboard", (req,res)=>{
 
   overdue.sort((a,b)=> b.totalResiduo - a.totalResiduo);
 
+  const activeDeadlines = (db.deadlines || []).filter((x) => !x.completed && !x.completedAt);
+
   res.json({
     clienti: (db.clients||[]).length,
     pratiche: (db.cases||[]).length,
     fattureTotali: fatture,
     importoFatture: +fatturato.toFixed(2),
     insoluti: +insoluti.toFixed(2),
-    scadenzeMese: (db.deadlines||[]).filter(x=> String(x.date||"").slice(0,7) === new Date().toISOString().slice(0,7)).length,
+    scadenzeMese: activeDeadlines.filter(x=> String(x.date||"").slice(0,7) === new Date().toISOString().slice(0,7)).length,
     morosi: overdue.slice(0, 10),
   });
 });
@@ -62,6 +64,7 @@ router.get("/recenti", (req,res)=>{
   const casesById = new Map((db.cases||[]).map((c)=> [c.id, c]));
   const clientsById = new Map((db.clients||[]).map((c)=> [c.id, c]));
   const list = (db.deadlines||[])
+    .filter((x)=> !x.completed && !x.completedAt)
     .filter(x=> !!x.date && !isNaN(new Date(x.date)))
     .map(x=> {
       const caseInfo = x.caseId ? casesById.get(x.caseId) : null;

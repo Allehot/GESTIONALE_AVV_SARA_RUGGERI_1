@@ -21,7 +21,8 @@ function toICS(list){
 }
 
 router.get("/ics", (req,res)=>{
-  const ics = toICS(db.deadlines||[]);
+  const list = (db.deadlines||[]).filter((d) => !d.completed && !d.completedAt);
+  const ics = toICS(list);
   res.setHeader("Content-Type","text/calendar; charset=utf-8");
   res.send(ics);
 });
