@@ -84,6 +84,22 @@ function ensureGuardianDefaults(g) {
   g.movements ||= [];
   g.balance ||= 0;
   g.folders = Array.isArray(g.folders) ? g.folders : [];
+  if (!g.folders.length) {
+    const legacyDocs = Array.isArray(g.documents) ? g.documents : [];
+    const folderId = g.defaultFolderId || uuidv4();
+    const folderName = g.defaultFolderName || "Documenti";
+    g.folders = [
+      {
+        id: folderId,
+        name: folderName,
+        createdAt: g.createdAt || new Date().toISOString(),
+        documents: legacyDocs,
+      },
+    ];
+    g.defaultFolderId = folderId;
+    g.defaultFolderName = folderName;
+    g.documents = [];
+  }
   g.folders.forEach((folder) => {
     folder.documents = Array.isArray(folder.documents) ? folder.documents : [];
   });
