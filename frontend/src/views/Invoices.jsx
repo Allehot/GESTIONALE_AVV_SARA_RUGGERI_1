@@ -422,6 +422,22 @@ function InvoiceCard({
           >
             🧾 PDF
           </button>
+          <button
+            className="ghost"
+            style={{ color: "#b91c1c" }}
+            onClick={async () => {
+              if (!window.confirm(`Eliminare la fattura ${invoice.number}?`)) return;
+              try {
+                await api.deleteInvoice(invoice.id);
+                onRefresh();
+              } catch (e) {
+                console.error(e);
+                alert(e.message || "Errore eliminazione fattura");
+              }
+            }}
+          >
+            🗑️ Elimina
+          </button>
         </div>
       </div>
       {expanded && (

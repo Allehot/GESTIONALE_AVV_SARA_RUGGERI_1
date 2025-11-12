@@ -19,6 +19,24 @@ function ensureStaticDir() {
   fs.mkdirSync(INVOICE_DIR, { recursive: true });
 }
 
+function buildAbsoluteUrl(req, relativePath) {
+  if (!relativePath) return relativePath;
+  if (/^https?:\/\//i.test(relativePath)) return relativePath;
+  const normalized = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
+  const host = req.get("host");
+  if (!host) return normalized;
+  const protocol = req.protocol || "http";
+  try {
+    return new URL(normalized, `${protocol}://${host}`).toString();
+  } catch {
+    return normalized;
+  }
+}
+
+function safeInvoiceFilename(number) {
+  return String(number || "fattura").replace(/[^a-zA-Z0-9-_]/g, "_");
+}
+
 const LINE_TYPE_LABELS = {
   manual: "Onorario",
   onorario: "Onorario",
@@ -395,7 +413,7 @@ router.get("/:id/pdf", (req, res) => {
   if (!inv) return res.status(404).json({ message: "Fattura non trovata" });
 
   ensureStaticDir();
-  const safeNumber = inv.number.replace(/[^a-zA-Z0-9-_]/g, "_");
+  const safeNumber = safeInvoiceFilename(inv.number);
   const file = path.join(INVOICE_DIR, `${safeNumber}.pdf`);
 
   const doc = new PDFDocument({ margin: 50 });
@@ -515,12 +533,44 @@ router.get("/:id/pdf", (req, res) => {
   doc.end();
 
   stream.on("finish", () => {
-    res.json({ url: `/static/invoices/${path.basename(file)}` });
+    const publicPath = `/static/invoices/${path.basename(file)}`;
+    res.json({
+      url: buildAbsoluteUrl(req, publicPath),
+      path: publicPath,
+    });
   });
   stream.on("error", (err) => {
     console.error(err);
     res.status(500).json({ message: "Errore generazione PDF" });
   });
+});
+
+router.delete("/:id", (req, res) => {
+  const ix = (db.invoices || []).findIndex((i) => i.id === req.params.id);
+  if (ix < 0) return res.status(404).json({ message: "Fattura non trovata" });
+  const [removed] = db.invoices.splice(ix, 1);
+
+  (db.expenses || []).forEach((exp) => {
+    if (exp.billedInvoiceId === removed.id) delete exp.billedInvoiceId;
+  });
+
+  if (removed.caseId) {
+    (db.logs ||= []).push({
+      id: uuidv4(),
+      caseId: removed.caseId,
+      action: "fattura-eliminata",
+      detail: `Eliminata fattura ${removed.number}`,
+      category: "fattura",
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  const safeNumber = safeInvoiceFilename(removed.number);
+  const pdfPath = path.join(INVOICE_DIR, `${safeNumber}.pdf`);
+  fs.promises.unlink(pdfPath).catch(() => {});
+
+  saveDB();
+  res.json({ ok: true });
 });
 
 export default router;
