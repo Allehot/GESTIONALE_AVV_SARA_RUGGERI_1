@@ -258,9 +258,11 @@ router.get("/:id/deadlines", (req, res) => {
 
 router.post("/:id/deadlines", (req, res) => {
   const b = req.body || {};
+  const c = (db.cases || []).find((x) => x.id === req.params.id);
   const d = {
     id: uuidv4(),
     caseId: req.params.id,
+    clientId: c?.clientId || null,
     date: b.date || new Date().toISOString().slice(0, 10),
     time: b.time || "",
     type: b.type || "scadenza",

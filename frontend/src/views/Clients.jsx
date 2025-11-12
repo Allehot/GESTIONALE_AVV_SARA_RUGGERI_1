@@ -186,10 +186,114 @@ function ExpensesModal({ client, onClose }) {
   );
 }
 
+function ClientDeadlineModal({ client, onClose }) {
+  const [cases, setCases] = useState([]);
+  const [form, setForm] = useState({
+    caseId: "",
+    date: "",
+    time: "",
+    type: "udienza",
+    title: "",
+    note: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadCases() {
+      try {
+        const arr = await api.clientCases(client.id);
+        setCases(arr);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    loadCases();
+  }, [client.id]);
+
+  async function save() {
+    if (!form.date) {
+      setError("Seleziona una data");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.addDeadline({
+        clientId: client.id,
+        caseId: form.caseId || null,
+        date: form.date,
+        time: form.time || null,
+        type: form.type,
+        title: form.title || form.type,
+        note: form.note || "",
+      });
+      setMessage("Scadenza registrata correttamente");
+      setForm({ ...form, date: "", time: "", title: "", note: "" });
+    } catch (err) {
+      setError(err.message || "Errore durante il salvataggio");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal">
+      <div className="pane grid" style={{ gap: 12, minWidth: 420 }}>
+        <b>Nuova scadenza per {client.name}</b>
+        {message && <Banner text={message} type="success" />}
+        {error && <Banner text={error} />}
+        <select value={form.caseId} onChange={(e) => setForm({ ...form, caseId: e.target.value })}>
+          <option value="">Collega a pratica (opzionale)</option>
+          {cases.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.number} — {p.subject}
+            </option>
+          ))}
+        </select>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+          <input type="time" value={form.time || ""} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+            <option value="udienza">Udienza</option>
+            <option value="termine">Termine</option>
+            <option value="deposito">Deposito</option>
+            <option value="scadenza">Scadenza</option>
+          </select>
+          <input
+            placeholder="Titolo"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
+        </div>
+        <textarea
+          rows={3}
+          placeholder="Note interne"
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+        />
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+          <button className="ghost" onClick={onClose} disabled={saving}>
+            Chiudi
+          </button>
+          <button onClick={save} disabled={saving}>
+            Salva scadenza
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Clients() {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [clientExp, setClientExp] = useState(null);
+  const [deadlineFor, setDeadlineFor] = useState(null);
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
@@ -355,6 +459,7 @@ export default function Clients() {
 
             <div className="row" style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <button className="ghost" onClick={() => setClientExp(c)}>💸 Spese</button>
+              <button className="ghost" onClick={() => setDeadlineFor(c)}>🗓️ Scadenza</button>
               <button
                 className="ghost"
                 onClick={async () => {
@@ -407,6 +512,9 @@ export default function Clients() {
       )}
       {clientExp && (
         <ExpensesModal client={clientExp} onClose={() => setClientExp(null)} />
+      )}
+      {deadlineFor && (
+        <ClientDeadlineModal client={deadlineFor} onClose={() => setDeadlineFor(null)} />
       )}
     </div>
   );

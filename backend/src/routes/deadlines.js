@@ -20,6 +20,7 @@ router.post("/", (req, res) => {
   const d = {
     id: uuidv4(),
     caseId: b.caseId || null,
+    clientId: b.clientId || null,
     date: b.date || new Date().toISOString().slice(0,10),
     time: b.time || "",              // HH:mm (opzionale)
     type: b.type || "scadenza",      // es: udienza, deposito, termine perentorio…

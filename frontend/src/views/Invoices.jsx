@@ -1,6 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, fmtMoney } from "../api";
 
+const LINE_TYPES = [
+  { value: "onorario", label: "Onorario" },
+  { value: "spesa", label: "Spese" },
+  { value: "anticipo", label: "Anticipo" },
+  { value: "rimborso", label: "Rimborso" },
+];
+
+const getLineTypeLabel = (type) => {
+  if (!type) return "Voce";
+  const normalized = String(type).toLowerCase();
+  if (normalized === "manual") return "Onorario";
+  const match = LINE_TYPES.find((t) => t.value === normalized);
+  return match ? match.label : "Voce";
+};
+
 function SummaryCard({ title, value, accent = "default" }) {
   const colors = {
     default: { background: "#eef2ff", color: "#3730a3" },
@@ -22,31 +37,50 @@ function SummaryCard({ title, value, accent = "default" }) {
 function LineList({ invoice, onAdd, onRemove }) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
+  const [type, setType] = useState("onorario");
   return (
     <div className="grid" style={{ gap: 8 }}>
       <div className="grid" style={{ gap: 4 }}>
-        {invoice.lines.map((line) => (
+        {(invoice.lines || []).map((line) => (
           <div key={line.id} className="row between" style={{ padding: "4px 0" }}>
             <div>
-              <b>{line.description || line.type}</b> — € {fmtMoney(line.amount)}
+              <b>{getLineTypeLabel(line.type)}</b>
+              {line.description && line.description !== getLineTypeLabel(line.type) && (
+                <span> — {line.description}</span>
+              )}
+              <span> — € {fmtMoney(line.amount)}</span>
             </div>
             <button className="ghost" onClick={() => onRemove(line.id)}>
               ❌
             </button>
           </div>
         ))}
-        {invoice.lines.length === 0 && <div style={{ opacity: 0.6 }}>Nessuna riga presente.</div>}
+        {(invoice.lines || []).length === 0 && (
+          <div style={{ opacity: 0.6 }}>Nessuna riga presente.</div>
+        )}
       </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          {LINE_TYPES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <input placeholder="Descrizione" value={desc} onChange={(e) => setDesc(e.target.value)} />
         <input placeholder="Importo" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <button
           onClick={() => {
             const v = Number(String(amount).replace(",", "."));
             if (!(v > 0)) return;
-            onAdd({ description: desc || "Onorario", amount: v });
+            onAdd({
+              description: desc || getLineTypeLabel(type),
+              amount: v,
+              type,
+            });
             setDesc("");
             setAmount("");
+            setType("onorario");
           }}
         >
           ➕ Riga
@@ -208,7 +242,7 @@ function NewInvoiceModal({ clients, cases, onClose, onSaved }) {
   const [clientId, setClient] = useState(clients[0]?.id || "");
   const [caseId, setCase] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [lines, setLines] = useState([{ description: "Onorario", amount: "" }]);
+  const [lines, setLines] = useState([{ description: "Onorario", amount: "", type: "onorario" }]);
 
   const caseOptions = useMemo(() => cases.filter((p) => p.clientId === clientId), [cases, clientId]);
 
@@ -243,6 +277,20 @@ function NewInvoiceModal({ clients, cases, onClose, onSaved }) {
         <div className="grid" style={{ gap: 8 }}>
           {lines.map((line, idx) => (
             <div key={idx} className="row" style={{ gap: 8 }}>
+              <select
+                value={line.type || "onorario"}
+                onChange={(e) => {
+                  const next = [...lines];
+                  next[idx] = { ...next[idx], type: e.target.value };
+                  setLines(next);
+                }}
+              >
+                {LINE_TYPES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <input
                 placeholder="Descrizione"
                 value={line.description}
@@ -266,7 +314,7 @@ function NewInvoiceModal({ clients, cases, onClose, onSaved }) {
                   className="ghost"
                   onClick={() => {
                     const next = lines.filter((_, i) => i !== idx);
-                    setLines(next.length ? next : [{ description: "", amount: "" }]);
+                    setLines(next.length ? next : [{ description: "", amount: "", type: "onorario" }]);
                   }}
                 >
                   ❌
@@ -276,7 +324,7 @@ function NewInvoiceModal({ clients, cases, onClose, onSaved }) {
           ))}
           <button
             className="ghost"
-            onClick={() => setLines([...lines, { description: "", amount: "" }])}
+            onClick={() => setLines([...lines, { description: "", amount: "", type: "onorario" }])}
           >
             ➕ Aggiungi riga
           </button>
@@ -293,8 +341,9 @@ function NewInvoiceModal({ clients, cases, onClose, onSaved }) {
                 dueDate: dueDate || null,
                 lines: lines
                   .map((l) => ({
-                    description: l.description || "Onorario",
+                    description: l.description || getLineTypeLabel(l.type || "onorario"),
                     amount: Number(String(l.amount).replace(",", ".")),
+                    type: l.type || "onorario",
                   }))
                   .filter((l) => l.amount > 0),
               };
