@@ -1,86 +1,101 @@
 const API = "/api";
-async function j(url, opt) {
-  const r = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opt });
-  if (!r.ok) throw new Error(await r.text());
-  const ct = r.headers.get("content-type") || "";
-  return ct.includes("application/json") ? r.json() : r.blob();
+
+async function request(url, opt) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...opt,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const data = await res.json();
+      message = data?.message || JSON.stringify(data);
+    } catch (err) {
+      message = await res.text();
+    }
+    throw new Error(message || "Richiesta non riuscita");
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return res.json();
+  if (ct.includes("text/")) return res.text();
+  return res.blob();
 }
+
+const json = (url, options) => request(url, { ...options, body: options?.body ? JSON.stringify(options.body) : undefined });
+
 export const api = {
   // clients
-  clients: () => j(`${API}/clienti`),
-  createClient: (p) => j(`${API}/clienti`, { method: "POST", body: JSON.stringify(p) }),
-  clientExpenses: (id) => j(`${API}/clienti/${id}/expenses`),
-  addClientExpense: (id, p) => j(`${API}/clienti/${id}/expenses`, { method: "POST", body: JSON.stringify(p) }),
-  delExpense: (id) => j(`${API}/spese/${id}`, { method: "DELETE" }),
+  clients: () => request(`${API}/clienti`),
+  createClient: (payload) => json(`${API}/clienti`, { method: "POST", body: payload }),
+  clientExpenses: (id) => request(`${API}/clienti/${id}/expenses`),
+  addClientExpense: (id, payload) => json(`${API}/clienti/${id}/expenses`, { method: "POST", body: payload }),
 
   // cases
-  cases: () => j(`${API}/casi`),
-  case: (id) => j(`${API}/casi/${id}`),
-  createCase: (p) => j(`${API}/casi`, { method: "POST", body: JSON.stringify(p) }),
-  updateCase: (id, p) => j(`${API}/casi/${id}`, { method: "PUT", body: JSON.stringify(p) }),
-  deleteCase: (id) => j(`${API}/casi/${id}`, { method: "DELETE" }),
+  cases: () => request(`${API}/casi`),
+  case: (id) => request(`${API}/casi/${id}`),
+  createCase: (payload) => json(`${API}/casi`, { method: "POST", body: payload }),
+  updateCase: (id, payload) => json(`${API}/casi/${id}`, { method: "PUT", body: payload }),
+  deleteCase: (id) => json(`${API}/casi/${id}`, { method: "DELETE" }),
 
-  caseLogs: (id) => j(`${API}/casi/${id}/logs`),
-  addCaseLog: (id, p) => j(`${API}/casi/${id}/logs`, { method: "POST", body: JSON.stringify(p) }),
+  caseLogs: (id) => request(`${API}/casi/${id}/logs`),
+  addCaseLog: (id, payload) => json(`${API}/casi/${id}/logs`, { method: "POST", body: payload }),
+  caseTimeline: (id) => request(`${API}/casi/${id}/timeline`),
+  caseExpenses: (id) => request(`${API}/casi/${id}/expenses`),
+  addCaseExpense: (id, payload) => json(`${API}/casi/${id}/expenses`, { method: "POST", body: payload }),
+  caseDeadlines: (id) => request(`${API}/casi/${id}/deadlines`),
+  addCaseDeadline: (id, payload) => json(`${API}/casi/${id}/deadlines`, { method: "POST", body: payload }),
+  caseInvoices: (id) => request(`${API}/casi/${id}/invoices`),
 
-  caseExpenses: (id) => j(`${API}/casi/${id}/expenses`),
-  addCaseExpense: (id, p) => j(`${API}/casi/${id}/expenses`, { method: "POST", body: JSON.stringify(p) }),
+  previewCaseNumber: (caseType = "civile") => request(`${API}/casi/preview-number?caseType=${encodeURIComponent(caseType)}`),
+  caseNumberingConfig: () => request(`${API}/casi/numbering-config`),
+  updateCaseNumberingConfig: (payload) => json(`${API}/casi/numbering-config`, { method: "PUT", body: payload }),
 
-  caseDeadlines: (id) => j(`${API}/casi/${id}/deadlines`),
-  addCaseDeadline: (id, p) => j(`${API}/casi/${id}/deadlines`, { method: "POST", body: JSON.stringify(p) }),
-
-  caseInvoices: (id) => j(`${API}/casi/${id}/invoices`),
-
-  // deadlines globali + ICS
-  deadlines: () => j(`${API}/deadlines`),
-  addDeadline: (p) => j(`${API}/deadlines`, { method: "POST", body: JSON.stringify(p) }),
-  deleteDeadline: (id) => j(`${API}/deadlines/${id}`, { method: "DELETE" }),
+  // deadlines globali
+  deadlines: () => request(`${API}/deadlines`),
+  addDeadline: (payload) => json(`${API}/deadlines`, { method: "POST", body: payload }),
+  deleteDeadline: (id) => json(`${API}/deadlines/${id}`, { method: "DELETE" }),
 
   // invoices
-  invoices: () => j(`${API}/fatture`),
-  createInvoice: (p) => j(`${API}/fatture`, { method: "POST", body: JSON.stringify(p) }),
-  addPayment: (id, p) => j(`${API}/fatture/${id}/payments`, { method: "POST", body: JSON.stringify(p) }),
-  splitInvoice: (id, p) => j(`${API}/fatture/${id}/split`, { method: "POST", body: JSON.stringify(p) }),
-  invoicePdf: (id) => j(`${API}/fatture/${id}/pdf`),
+  invoices: () => request(`${API}/fatture`),
+  invoice: (id) => request(`${API}/fatture/${id}`),
+  createInvoice: (payload) => json(`${API}/fatture`, { method: "POST", body: payload }),
+  updateInvoice: (id, payload) => json(`${API}/fatture/${id}`, { method: "PUT", body: payload }),
+  addPayment: (id, payload) => json(`${API}/fatture/${id}/payments`, { method: "POST", body: payload }),
+  removePayment: (id, paymentId) => json(`${API}/fatture/${id}/payments/${paymentId}`, { method: "DELETE" }),
+  addInvoiceLine: (id, payload) => json(`${API}/fatture/${id}/lines`, { method: "POST", body: payload }),
+  removeInvoiceLine: (id, lineId) => json(`${API}/fatture/${id}/lines/${lineId}`, { method: "DELETE" }),
+  attachExpensesToInvoice: (id, expenseIds) => json(`${API}/fatture/${id}/attach-expenses`, {
+    method: "POST",
+    body: { expenseIds },
+  }),
+  createInvoiceFromExpenses: (payload) => json(`${API}/fatture/genera-da-spese`, { method: "POST", body: payload }),
+  invoicePdf: (id) => request(`${API}/fatture/${id}/pdf`),
 
   // guardianships
-  guardians: () => j(`${API}/guardianships`),
-  createGuardian: (p) => j(`${API}/guardianships`, { method: "POST", body: JSON.stringify(p) }),
-  guardianSummary: (id) => j(`${API}/guardianships/${id}/summary`),
-  guardianAddIncome: (id, p) => j(`${API}/guardianships/${id}/incomes`, { method: "POST", body: JSON.stringify(p) }),
-  guardianAddExpense: (id, p) => j(`${API}/guardianships/${id}/expenses`, { method: "POST", body: JSON.stringify(p) }),
-  guardianAddDeposit: (id, p) => j(`${API}/guardianships/${id}/deposits`, { method: "POST", body: JSON.stringify(p) }),
+  guardians: () => request(`${API}/guardianships`),
+  guardian: (id) => request(`${API}/guardianships/${id}`),
+  createGuardian: (payload) => json(`${API}/guardianships`, { method: "POST", body: payload }),
+  guardianSummary: (id) => request(`${API}/guardianships/${id}/summary`),
+  guardianAddIncome: (id, payload) => json(`${API}/guardianships/${id}/incomes`, { method: "POST", body: payload }),
+  guardianAddExpense: (id, payload) => json(`${API}/guardianships/${id}/expenses`, { method: "POST", body: payload }),
+  guardianAddDeposit: (id, payload) => json(`${API}/guardianships/${id}/deposits`, { method: "POST", body: payload }),
+  guardianAddMovement: (id, payload) => json(`${API}/guardianships/${id}/movements`, { method: "POST", body: payload }),
+  guardianTimeline: (id) => request(`${API}/guardianships/${id}/timeline`),
+  guardianAddTimeline: (id, payload) => json(`${API}/guardianships/${id}/timeline`, { method: "POST", body: payload }),
+  guardianAddMedicalExpense: (id, payload) => json(`${API}/guardianships/${id}/medical-expenses`, { method: "POST", body: payload }),
+  guardianAddStructureExpense: (id, payload) => json(`${API}/guardianships/${id}/structure-expenses`, { method: "POST", body: payload }),
+  guardianUpdateCareStructure: (id, payload) => json(`${API}/guardianships/${id}/care-structure`, { method: "PUT", body: payload }),
+  guardianCreateFolder: (id, payload) => json(`${API}/guardianships/${id}/folders`, { method: "POST", body: payload }),
+  guardianAddDocument: (id, folderId, payload) =>
+    json(`${API}/guardianships/${id}/folders/${folderId}/documents`, { method: "POST", body: payload }),
+  guardianDeleteDocument: (id, folderId, docId) =>
+    json(`${API}/guardianships/${id}/folders/${folderId}/documents/${docId}`, { method: "DELETE" }),
 
   // reports
-  reportDashboard: () => j(`${API}/reports/dashboard`),
-  reportRecenti: () => j(`${API}/reports/recenti`),
-  reportMesi: () => j(`${API}/reports/mesi`),
-  
-// CLIENTS
-clients: () => j(`${API}/clienti`),
-clientCases: (id) => j(`${API}/clienti/${id}/casi`),
-clientInvoices: (id) => j(`${API}/clienti/${id}/fatture`),
-createClientCase: (id, p) => j(`${API}/clienti/${id}/casi`, { method: "POST", body: JSON.stringify(p) }),
+  reportDashboard: () => request(`${API}/reports/dashboard`),
+  reportRecenti: () => request(`${API}/reports/recenti`),
+  reportMesi: () => request(`${API}/reports/mesi`),
 
-// INVOICES
-createInvoice: (p) => j(`${API}/fatture`, { method: "POST", body: JSON.stringify(p) }),
-invoiceExpenses: (id) => j(`${API}/fatture/${id}/expenses`),
-attachExpensesToInvoice: (id, expenseIds) =>
-  j(`${API}/fatture/${id}/attach-expenses`, { method: "POST", body: JSON.stringify({ expenseIds }) }),
-createInvoiceFromExpenses: (p) => j(`${API}/fatture/genera-da-spese`, { method: "POST", body: JSON.stringify(p) }),
-// numerazione pratica
-previewCaseNumber: (caseType="civile") => j(`${API}/casi/preview-number?caseType=${encodeURIComponent(caseType)}`),
-
-// pratiche
-createCase: (p) => j(`${API}/casi`, { method: "POST", body: JSON.stringify(p) }),
-
-// spese per pratica (già presenti)
-caseExpenses: (id) => j(`${API}/casi/${id}/expenses`),
-
-// fatture
-createInvoiceFromExpenses: (p) => j(`${API}/fatture/genera-da-spese`, { method: "POST", body: JSON.stringify(p) }),
-attachExpensesToInvoice: (id, expenseIds) => j(`${API}/fatture/${id}/attach-expenses`, { method: "POST", body: JSON.stringify({ expenseIds }) }),
-addPayment: (id, p) => j(`${API}/fatture/${id}/payments`, { method: "POST", body: JSON.stringify(p) }),
   // files
   exportExcel: () => fetch(`${API}/files/export/excel`).then((r) => r.blob()),
   importExcel: (file) => {
@@ -89,6 +104,5 @@ addPayment: (id, p) => j(`${API}/fatture/${id}/payments`, { method: "POST", body
     return fetch(`${API}/files/import/excel`, { method: "POST", body: fd }).then((r) => r.json());
   },
 };
-
 
 export const fmtMoney = (v) => Number(v || 0).toFixed(2);
