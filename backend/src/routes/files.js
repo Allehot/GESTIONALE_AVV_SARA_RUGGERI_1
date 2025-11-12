@@ -19,6 +19,20 @@ router.get("/export/excel", async (req,res)=>{
   addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt"]);
   addSheet("invoices", db.invoices||[], ["id","number","date","clientId","caseId","status"]);
   addSheet("expenses", db.expenses||[], ["id","clientId","caseId","date","description","amount","type"]);
+  addSheet("guardianships", db.guardianships||[], [
+    "id",
+    "fullName",
+    "birthDate",
+    "fiscalCode",
+    "residence",
+    "status",
+    "supportLevel",
+    "court",
+    "judge",
+    "balance",
+    "createdAt",
+    "updatedAt",
+  ]);
   const buf = await wb.xlsx.writeBuffer();
   res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition",'attachment; filename="export.xlsx"');
@@ -47,17 +61,72 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
   const casesArr = take("cases");
   const invoices = take("invoices");
   const expenses = take("expenses");
+  const guardiansSheet = take("guardianships");
+  const guardians = guardiansSheet.length ? guardiansSheet : take("guardians");
   // naive merge by id uniqueness
-  const pushUnique = (arr, items)=>{
+  const pushUnique = (arr, items, normalize)=>{
     const ids = new Set(arr.map(x=> x.id));
-    items.forEach(x=> { if (x?.id && !ids.has(x.id)) arr.push(x); });
+    items.forEach(raw=> {
+      if (!raw?.id) return;
+      const item = normalize ? normalize(raw) : raw;
+      if (!item?.id || ids.has(item.id)) return;
+      arr.push(item);
+      ids.add(item.id);
+    });
   };
   pushUnique((db.clients ||= []), clients);
   pushUnique((db.cases ||= []), casesArr);
   pushUnique((db.invoices ||= []), invoices);
   pushUnique((db.expenses ||= []), expenses);
+  pushUnique((db.guardianships ||= []), guardians, (g)=>{
+    const now = new Date();
+    const toIsoDate = (value)=>{
+      if (!value) return "";
+      if (value instanceof Date) return value.toISOString().slice(0,10);
+      const str = String(value).trim();
+      if (!str) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+      const parsed = new Date(str);
+      return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0,10);
+    };
+    const toIsoDateTime = (value)=>{
+      if (!value) return null;
+      if (value instanceof Date) return value.toISOString();
+      const str = String(value).trim();
+      if (!str) return null;
+      const parsed = new Date(str);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    };
+    const guardian = {
+      id: String(g.id).trim(),
+      fullName: String(g.fullName || g.name || "").trim(),
+      birthDate: toIsoDate(g.birthDate),
+      fiscalCode: String(g.fiscalCode || "").trim(),
+      residence: String(g.residence || "").trim(),
+      status: String(g.status || "attivo").trim() || "attivo",
+      supportLevel: String(g.supportLevel || g.support || "").trim(),
+      court: String(g.court || "").trim(),
+      judge: String(g.judge || "").trim(),
+      balance: Number(g.balance || 0) || 0,
+      createdAt: toIsoDateTime(g.createdAt) || now.toISOString(),
+      updatedAt: toIsoDateTime(g.updatedAt) || now.toISOString(),
+      notes: [],
+      documents: [],
+      inventory: [],
+      incomes: [],
+      expenses: [],
+      movements: [],
+      deposits: [],
+      folders: [],
+      timeline: [],
+      careStructure: null,
+      medicalExpenses: [],
+      structureExpenses: [],
+    };
+    return guardian;
+  });
   saveDB();
-  res.json({ ok:true, imported: { clients: clients.length, cases: casesArr.length, invoices: invoices.length, expenses: expenses.length } });
+  res.json({ ok:true, imported: { clients: clients.length, cases: casesArr.length, invoices: invoices.length, expenses: expenses.length, guardianships: guardians.length } });
 });
 
 // DELETE expense (public path: /api/spese/:id via server mount)
