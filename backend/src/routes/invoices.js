@@ -4,11 +4,40 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
 import PDFDocument from "pdfkit";
+import { fileURLToPath } from "url";
 import { db, saveDB } from "../db.js";
 import { parseMoney, round2 } from "../lib/money.js";
 
 const router = express.Router();
 const _num = (x) => round2(parseMoney(x));
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const STATIC_ROOT = path.resolve(__dirname, "../../data/static");
+const INVOICE_DIR = path.join(STATIC_ROOT, "invoices");
+
+function ensureStaticDir() {
+  fs.mkdirSync(INVOICE_DIR, { recursive: true });
+}
+
+const LINE_TYPE_LABELS = {
+  manual: "Onorario",
+  onorario: "Onorario",
+  spesa: "Spese",
+  rimborso: "Rimborso",
+  anticipo: "Anticipo",
+};
+
+function sanitizeLineType(type) {
+  if (!type) return "manual";
+  const key = String(type).toLowerCase();
+  if (LINE_TYPE_LABELS[key]) return key;
+  return "manual";
+}
+
+function lineTypeLabel(type) {
+  const key = sanitizeLineType(type);
+  return LINE_TYPE_LABELS[key] || "Voce";
+}
 
 function invoiceSequenceKey() {
   const year = new Date().getFullYear();
@@ -43,7 +72,7 @@ function computeResiduo(inv) {
 function normalizeLines(lines = []) {
   return lines.map((l) => ({
     id: l.id || uuidv4(),
-    type: l.type || "manual",
+    type: sanitizeLineType(l.type || "manual"),
     description: l.description || "",
     amount: _num(l.amount),
   }));
@@ -116,7 +145,12 @@ router.post("/", (req, res) => {
   if (expenseIds.length) {
     const picked = (db.expenses || []).filter((e) => expenseIds.includes(e.id));
     picked.forEach((e) => {
-      lines.push({ id: uuidv4(), type: e.type || "spesa", description: e.description || "Spesa pratica", amount: _num(e.amount) });
+      lines.push({
+        id: uuidv4(),
+        type: sanitizeLineType(e.type || "spesa"),
+        description: e.description || "Spesa pratica",
+        amount: _num(e.amount),
+      });
     });
   }
 
@@ -196,7 +230,12 @@ router.post("/genera-da-spese", (req, res) => {
     if (exists) return res.status(400).json({ message: "Numero fattura già utilizzato" });
   }
 
-  let lines = picked.map((e) => ({ id: uuidv4(), type: e.type || "spesa", description: e.description || "Spesa pratica", amount: _num(e.amount) }));
+  let lines = picked.map((e) => ({
+    id: uuidv4(),
+    type: sanitizeLineType(e.type || "spesa"),
+    description: e.description || "Spesa pratica",
+    amount: _num(e.amount),
+  }));
   if (Array.isArray(b.extraLines)) {
     lines = lines.concat(normalizeLines(b.extraLines));
   }
@@ -289,7 +328,7 @@ router.post("/:id/lines", (req, res) => {
   if (!inv) return res.status(404).json({ message: "Fattura non trovata" });
   const line = {
     id: uuidv4(),
-    type: req.body?.type || "manual",
+    type: sanitizeLineType(req.body?.type || "manual"),
     description: req.body?.description || "",
     amount: _num(req.body?.amount),
   };
@@ -355,31 +394,133 @@ router.get("/:id/pdf", (req, res) => {
   const inv = (db.invoices || []).find((i) => i.id === req.params.id);
   if (!inv) return res.status(404).json({ message: "Fattura non trovata" });
 
-  const dir = path.resolve(process.cwd(), "public", "pdf");
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${inv.number}.pdf`);
+  ensureStaticDir();
+  const safeNumber = inv.number.replace(/[^a-zA-Z0-9-_]/g, "_");
+  const file = path.join(INVOICE_DIR, `${safeNumber}.pdf`);
 
-  const doc = new PDFDocument({ margin: 40 });
-  doc.pipe(fs.createWriteStream(file));
-  doc.fontSize(18).text(`Fattura ${inv.number}`);
-  doc.fontSize(12).text(`Data: ${inv.date}`);
-  if (inv.dueDate) doc.text(`Scadenza: ${inv.dueDate}`);
+  const doc = new PDFDocument({ margin: 50 });
+  const stream = fs.createWriteStream(file);
+  doc.pipe(stream);
+
   const client = (db.clients || []).find((c) => c.id === inv.clientId);
-  doc.moveDown().text(`Cliente: ${client?.name || ""}`);
+  const studio = db.studio || {};
+
+  doc.fontSize(20).fillColor("#111827").text(studio.name || "Studio Legale", { align: "right" });
+  if (studio.address) doc.fontSize(10).fillColor("#4b5563").text(studio.address, { align: "right" });
+  if (studio.phone)
+    doc.fontSize(10).fillColor("#4b5563").text(`Tel. ${studio.phone}`, { align: "right" });
+  if (studio.email)
+    doc.fontSize(10).fillColor("#4b5563").text(studio.email, { align: "right" });
+
+  doc.moveDown();
+  doc
+    .fontSize(22)
+    .fillColor("#111827")
+    .text(`Fattura ${inv.number}`, { align: "left" });
+  doc.moveDown(0.2);
+  doc
+    .fontSize(11)
+    .fillColor("#1f2937")
+    .text(`Data emissione: ${inv.date}`);
+  if (inv.dueDate) doc.text(`Scadenza pagamento: ${inv.dueDate}`);
+
+  doc.moveDown(0.5);
+  doc.fontSize(12).fillColor("#111827").text("Destinatario", { underline: true });
+  doc.fontSize(11).fillColor("#1f2937").text(client?.name || "");
+  if (client?.address) doc.text(client.address);
+  if (client?.fiscalCode) doc.text(`CF: ${client.fiscalCode}`);
+  if (client?.vatNumber) doc.text(`P.IVA: ${client.vatNumber}`);
+
   if (inv.caseId) {
     const p = (db.cases || []).find((x) => x.id === inv.caseId);
-    doc.text(`Pratica: ${p?.number || ""} - ${p?.subject || ""}`);
+    if (p) {
+      doc.moveDown(0.5);
+      doc.fontSize(12).fillColor("#111827").text("Pratica", { underline: true });
+      doc
+        .fontSize(11)
+        .fillColor("#1f2937")
+        .text(`${p.number || ""} — ${p.subject || ""}`);
+    }
   }
-  doc.moveDown().text("Righe:");
-  inv.lines.forEach((l) => doc.text(`- ${l.description} — € ${_num(l.amount).toFixed(2)}`));
+
   doc.moveDown();
-  const t = inv.totals;
-  doc.text(`Imponibile € ${t.imponibile.toFixed(2)}  Cassa € ${t.cassa.toFixed(2)}  IVA € ${t.iva.toFixed(2)}`);
-  doc.text(`Ritenuta € ${t.ritenuta.toFixed(2)}  Bollo € ${t.bollo.toFixed(2)}`);
-  doc.moveDown().fontSize(16).text(`TOTALE € ${t.totale.toFixed(2)}`, { align: "right" });
+  doc.fontSize(12).fillColor("#111827").text("Dettaglio prestazioni", { underline: true });
+  doc.moveDown(0.3);
+
+  const grouped = inv.lines.reduce((acc, line) => {
+    const key = sanitizeLineType(line.type);
+    (acc[key] ||= []).push(line);
+    return acc;
+  }, {});
+
+  const startX = doc.x;
+  Object.entries(grouped).forEach(([type, lines]) => {
+    doc
+      .fontSize(11)
+      .fillColor("#1f2937")
+      .text(lineTypeLabel(type), { continued: false, underline: true });
+    doc.moveDown(0.15);
+    lines.forEach((line) => {
+      doc
+        .fontSize(10)
+        .fillColor("#4b5563")
+        .text(line.description || lineTypeLabel(line.type), startX, doc.y, { width: 360 });
+      doc
+        .fontSize(10)
+        .fillColor("#111827")
+        .text(`€ ${_num(line.amount).toFixed(2)}`, 0, doc.y - 12, {
+          align: "right",
+        });
+      doc.moveDown(0.4);
+    });
+    doc.moveDown(0.2);
+  });
+
+  doc.moveDown();
+  doc.fontSize(12).fillColor("#111827").text("Riepilogo importi", { underline: true });
+  doc.moveDown(0.3);
+
+  const summaryRows = [
+    ["Imponibile", inv.totals.imponibile],
+    ["Cassa", inv.totals.cassa],
+    ["IVA", inv.totals.iva],
+    ["Ritenuta", -inv.totals.ritenuta],
+    ["Marca da bollo", inv.totals.bollo],
+  ];
+
+  summaryRows.forEach(([label, value]) => {
+    if (!value) return;
+    doc
+      .fontSize(10)
+      .fillColor("#4b5563")
+      .text(label, startX, doc.y, { width: 360 });
+    doc
+      .fontSize(10)
+      .fillColor("#111827")
+      .text(`€ ${_num(value).toFixed(2)}`, 0, doc.y - 12, { align: "right" });
+    doc.moveDown(0.35);
+  });
+
+  doc
+    .moveDown()
+    .fontSize(16)
+    .fillColor("#111827")
+    .text(`Totale da pagare € ${inv.totals.totale.toFixed(2)}`, { align: "right" });
+
+  if (inv.notes) {
+    doc.moveDown();
+    doc.fontSize(10).fillColor("#4b5563").text(inv.notes, { width: 500 });
+  }
+
   doc.end();
 
-  res.json({ url: `/pdf/${inv.number}.pdf` });
+  stream.on("finish", () => {
+    res.json({ url: `/static/invoices/${path.basename(file)}` });
+  });
+  stream.on("error", (err) => {
+    console.error(err);
+    res.status(500).json({ message: "Errore generazione PDF" });
+  });
 });
 
 export default router;

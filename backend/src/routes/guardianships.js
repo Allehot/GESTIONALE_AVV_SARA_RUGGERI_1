@@ -2,8 +2,43 @@
 import express from "express";
 import { db, saveDB } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const router = express.Router();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const STATIC_ROOT = path.resolve(__dirname, "../../data/static");
+
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+ensureDir(path.join(STATIC_ROOT, "guardians"));
+
+const storage = multer.diskStorage({
+  destination(req, file, cb) {
+    const guardianId = req.params.id;
+    const folderId = req.params.folderId;
+    const dir = path.join(STATIC_ROOT, "guardians", guardianId, folderId);
+    try {
+      ensureDir(dir);
+      cb(null, dir);
+    } catch (err) {
+      cb(err, dir);
+    }
+  },
+  filename(req, file, cb) {
+    const originalName = path.basename(file.originalname || "uploaded-file");
+    const safeOriginal = originalName.replace(/[^a-zA-Z0-9.\-_]/g, "_") || "uploaded-file";
+    const safeName = `${Date.now()}-${safeOriginal}`;
+    cb(null, safeName);
+  },
+});
+
+const upload = multer({ storage });
 
 function ensureGuardianDefaults(g) {
   g.notes ||= [];
@@ -197,19 +232,27 @@ router.post("/:id/folders", (req, res) => {
   res.json(folder);
 });
 
-router.post("/:id/folders/:folderId/documents", (req, res) => {
+router.post("/:id/folders/:folderId/documents", upload.single("file"), (req, res) => {
   const g = findGuardian(req.params.id);
   if (!g) return res.status(404).json({ message: "Amministrato non trovato" });
   const folder = (g.folders || []).find((f) => f.id === req.params.folderId);
   if (!folder) return res.status(404).json({ message: "Cartella non trovata" });
+  const body = req.body || {};
   const doc = {
     id: uuidv4(),
-    title: req.body?.title || "Documento",
-    description: req.body?.description || "",
-    url: req.body?.url || "",
+    title: body?.title || "Documento",
+    description: body?.description || "",
+    url: body?.url || "",
     createdAt: new Date().toISOString(),
-    date: req.body?.date || new Date().toISOString().slice(0, 10),
+    date: body?.date || new Date().toISOString().slice(0, 10),
   };
+  if (req.file) {
+    const relPath = path.relative(STATIC_ROOT, req.file.path).split(path.sep).join("/");
+    doc.url = `/static/${relPath}`;
+    doc.filePath = relPath;
+    doc.fileName = req.file.originalname;
+    doc.fileSize = req.file.size;
+  }
   folder.documents.push(doc);
   g.updatedAt = new Date().toISOString();
   saveDB();
@@ -223,7 +266,11 @@ router.delete("/:id/folders/:folderId/documents/:docId", (req, res) => {
   if (!folder) return res.status(404).json({ message: "Cartella non trovata" });
   const ix = (folder.documents || []).findIndex((d) => d.id === req.params.docId);
   if (ix < 0) return res.status(404).json({ message: "Documento non trovato" });
-  folder.documents.splice(ix, 1);
+  const [removed] = folder.documents.splice(ix, 1);
+  if (removed?.filePath) {
+    const abs = path.join(STATIC_ROOT, removed.filePath);
+    fs.promises.unlink(abs).catch(() => {});
+  }
   g.updatedAt = new Date().toISOString();
   saveDB();
   res.json({ ok: true });

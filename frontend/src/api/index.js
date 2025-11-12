@@ -95,8 +95,18 @@ export const api = {
   guardianAddStructureExpense: (id, payload) => json(`${API}/guardianships/${id}/structure-expenses`, { method: "POST", body: payload }),
   guardianUpdateCareStructure: (id, payload) => json(`${API}/guardianships/${id}/care-structure`, { method: "PUT", body: payload }),
   guardianCreateFolder: (id, payload) => json(`${API}/guardianships/${id}/folders`, { method: "POST", body: payload }),
-  guardianAddDocument: (id, folderId, payload) =>
-    json(`${API}/guardianships/${id}/folders/${folderId}/documents`, { method: "POST", body: payload }),
+  guardianAddDocument: (id, folderId, payload) => {
+    const url = `${API}/guardianships/${id}/folders/${folderId}/documents`;
+    if (payload?.file) {
+      const fd = new FormData();
+      fd.append("title", payload.title || "");
+      fd.append("description", payload.description || "");
+      fd.append("date", payload.date || "");
+      fd.append("file", payload.file);
+      return request(url, { method: "POST", body: fd, headers: {} });
+    }
+    return json(url, { method: "POST", body: payload });
+  },
   guardianDeleteDocument: (id, folderId, docId) =>
     json(`${API}/guardianships/${id}/folders/${folderId}/documents/${docId}`, { method: "DELETE" }),
 

@@ -34,7 +34,8 @@ function Timeline({ events }) {
 
 function Documents({ guardian, onRefresh }) {
   const [newFolderName, setNewFolderName] = useState("");
-  const [newDoc, setNewDoc] = useState({ title: "", description: "", url: "", date: "" });
+  const [newDoc, setNewDoc] = useState({ title: "", description: "", file: null, date: "" });
+  const [fileKey, setFileKey] = useState(0);
   const [folderId, setFolderId] = useState(guardian.folders[0]?.id || "");
 
   useEffect(() => {
@@ -84,7 +85,7 @@ function Documents({ guardian, onRefresh }) {
                     </div>
                     {doc.url && (
                       <a className="ghost" href={doc.url} target="_blank" rel="noreferrer">
-                        Apri
+                        {doc.fileName ? `Apri ${doc.fileName}` : "Apri"}
                       </a>
                     )}
                     <button
@@ -112,10 +113,11 @@ function Documents({ guardian, onRefresh }) {
                   onChange={(e) => setNewDoc({ ...newDoc, description: e.target.value })}
                 />
                 <input
-                  placeholder="URL"
-                  value={newDoc.url}
-                  onChange={(e) => setNewDoc({ ...newDoc, url: e.target.value })}
+                  key={fileKey}
+                  type="file"
+                  onChange={(e) => setNewDoc({ ...newDoc, file: e.target.files?.[0] || null })}
                 />
+                {newDoc.file && <span style={{ fontSize: 12 }}>{newDoc.file.name}</span>}
                 <input
                   type="date"
                   value={newDoc.date}
@@ -124,8 +126,13 @@ function Documents({ guardian, onRefresh }) {
                 <button
                   onClick={async () => {
                     if (!folderId) return;
+                    if (!newDoc.file) {
+                      alert("Seleziona un file da caricare");
+                      return;
+                    }
                     await api.guardianAddDocument(guardian.id, folderId, newDoc);
-                    setNewDoc({ title: "", description: "", url: "", date: "" });
+                    setNewDoc({ title: "", description: "", file: null, date: "" });
+                    setFileKey((k) => k + 1);
                     onRefresh();
                   }}
                 >
