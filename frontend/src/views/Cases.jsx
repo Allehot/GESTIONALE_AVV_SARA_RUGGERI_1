@@ -205,6 +205,22 @@ function CaseDetail({ it, clients, onChanged }) {
 
   const [editOpen, setEditOpen] = useState(false);
 
+  const dependencySummary = useMemo(() => {
+    const parts = [];
+    if (invoices.length) {
+      parts.push(`${invoices.length} fattur${invoices.length === 1 ? "a" : "e"}`);
+    }
+    if (expenses.length) {
+      parts.push(`${expenses.length} spes${expenses.length === 1 ? "a" : "e"}`);
+    }
+    if (deadlines.length) {
+      parts.push(`${deadlines.length} scadenz${deadlines.length === 1 ? "a" : "e"}`);
+    }
+    return parts;
+  }, [invoices, expenses, deadlines]);
+
+  const deleteBlocked = dependencySummary.length > 0;
+
   async function loadAll() {
     const [tl, inv, ex, dl] = await Promise.all([
       api.caseTimeline(it.id),
@@ -243,7 +259,20 @@ function CaseDetail({ it, clients, onChanged }) {
           <button
             className="ghost"
             style={{ color: "#b91c1c" }}
+            disabled={deleteBlocked}
+            title={
+              deleteBlocked
+                ? `Impossibile eliminare: presenti ${dependencySummary.join(", ")}. Rimuovere prima gli elementi collegati.`
+                : undefined
+            }
             onClick={async () => {
+              if (deleteBlocked) {
+                alert(
+                  `Impossibile eliminare la pratica: risultano ancora ${dependencySummary.join(", ")}. ` +
+                    "Rimuovere o riassegnare i dati collegati prima di procedere."
+                );
+                return;
+              }
               if (!window.confirm(`Eliminare la pratica ${it.number}?`)) return;
               try {
                 await api.deleteCase(it.id);
@@ -258,6 +287,21 @@ function CaseDetail({ it, clients, onChanged }) {
           </button>
         </div>
       </div>
+
+      {deleteBlocked && (
+        <div
+          className="card"
+          style={{
+            border: "1px solid #facc15",
+            background: "#fefce8",
+            color: "#854d0e",
+            padding: 12,
+            fontSize: 14,
+          }}
+        >
+          Per eliminare la pratica occorre prima gestire gli elementi collegati: {dependencySummary.join(", ") || ""}.
+        </div>
+      )}
 
       <div className="tabs">
         <div className={`tab${tab === "summary" ? " active" : ""}`} onClick={() => setTab("summary")}>
