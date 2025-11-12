@@ -38,6 +38,21 @@ export const api = {
     json(`${API}/clienti/${clientId}/expenses/${expenseId}`, { method: "DELETE" }),
   delExpense: (clientId, expenseId) =>
     json(`${API}/clienti/${clientId}/expenses/${expenseId}`, { method: "DELETE" }),
+  clientDocuments: (id) => request(`${API}/clienti/${id}/documents`),
+  uploadClientDocument: (id, payload) => {
+    const url = `${API}/clienti/${id}/documents`;
+    if (payload?.file) {
+      const fd = new FormData();
+      fd.append("title", payload.title || "");
+      fd.append("description", payload.description || "");
+      fd.append("date", payload.date || "");
+      fd.append("file", payload.file);
+      return request(url, { method: "POST", body: fd, headers: {} });
+    }
+    return json(url, { method: "POST", body: payload });
+  },
+  deleteClientDocument: (clientId, docId) =>
+    json(`${API}/clienti/${clientId}/documents/${docId}`, { method: "DELETE" }),
 
   // cases
   cases: () => request(`${API}/casi`),
@@ -79,6 +94,7 @@ export const api = {
   }),
   createInvoiceFromExpenses: (payload) => json(`${API}/fatture/genera-da-spese`, { method: "POST", body: payload }),
   invoicePdf: (id) => request(`${API}/fatture/${id}/pdf`),
+  deleteInvoice: (id) => json(`${API}/fatture/${id}`, { method: "DELETE" }),
 
   // guardianships
   guardians: () => request(`${API}/guardianships`),

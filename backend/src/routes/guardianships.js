@@ -18,6 +18,40 @@ function ensureDir(dir) {
 
 ensureDir(path.join(STATIC_ROOT, "guardians"));
 
+function absoluteStaticUrl(req, relativePath) {
+  if (!relativePath) return relativePath;
+  if (/^https?:\/\//i.test(relativePath)) return relativePath;
+  const normalized = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
+  const host = req.get("host");
+  if (!host) return normalized;
+  const protocol = req.protocol || "http";
+  try {
+    return new URL(normalized, `${protocol}://${host}`).toString();
+  } catch {
+    return normalized;
+  }
+}
+
+function serializeGuardianDocument(doc, req) {
+  if (!doc) return doc;
+  const basePath = doc.filePath ? `/static/${String(doc.filePath).split(path.sep).join("/")}` : doc.url || "";
+  return {
+    ...doc,
+    url: basePath ? absoluteStaticUrl(req, basePath) : "",
+  };
+}
+
+function serializeGuardian(g, req) {
+  ensureGuardianDefaults(g);
+  return {
+    ...g,
+    folders: (g.folders || []).map((folder) => ({
+      ...folder,
+      documents: (folder.documents || []).map((doc) => serializeGuardianDocument(doc, req)),
+    })),
+  };
+}
+
 const storage = multer.diskStorage({
   destination(req, file, cb) {
     const guardianId = req.params.id;
@@ -49,7 +83,10 @@ function ensureGuardianDefaults(g) {
   g.deposits ||= [];
   g.movements ||= [];
   g.balance ||= 0;
-  g.folders ||= [];
+  g.folders = Array.isArray(g.folders) ? g.folders : [];
+  g.folders.forEach((folder) => {
+    folder.documents = Array.isArray(folder.documents) ? folder.documents : [];
+  });
   g.timeline ||= [];
   g.careStructure ||= null;
   g.medicalExpenses ||= [];
@@ -65,7 +102,7 @@ function findGuardian(id) {
 
 router.get("/", (req, res) => {
   (db.guardianships || []).forEach(ensureGuardianDefaults);
-  res.json(db.guardianships || []);
+  res.json((db.guardianships || []).map((g) => serializeGuardian(g, req)));
 });
 
 router.post("/", (req, res) => {
@@ -97,13 +134,13 @@ router.post("/", (req, res) => {
   };
   (db.guardianships ||= []).push(g);
   saveDB();
-  res.json(g);
+  res.json(serializeGuardian(g, req));
 });
 
 router.get("/:id", (req, res) => {
   const g = findGuardian(req.params.id);
   if (!g) return res.status(404).json({ message: "Amministrato non trovato" });
-  res.json(g);
+  res.json(serializeGuardian(g, req));
 });
 
 router.get("/:id/summary", (req, res) => {
@@ -237,6 +274,7 @@ router.post("/:id/folders/:folderId/documents", upload.single("file"), (req, res
   if (!g) return res.status(404).json({ message: "Amministrato non trovato" });
   const folder = (g.folders || []).find((f) => f.id === req.params.folderId);
   if (!folder) return res.status(404).json({ message: "Cartella non trovata" });
+  folder.documents = Array.isArray(folder.documents) ? folder.documents : [];
   const body = req.body || {};
   const doc = {
     id: uuidv4(),
@@ -256,7 +294,7 @@ router.post("/:id/folders/:folderId/documents", upload.single("file"), (req, res
   folder.documents.push(doc);
   g.updatedAt = new Date().toISOString();
   saveDB();
-  res.json(doc);
+  res.json(serializeGuardianDocument(doc, req));
 });
 
 router.delete("/:id/folders/:folderId/documents/:docId", (req, res) => {

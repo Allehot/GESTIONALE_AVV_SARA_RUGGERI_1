@@ -240,6 +240,22 @@ function CaseDetail({ it, clients, onChanged }) {
           <button className="ghost" onClick={() => setEditOpen(true)}>
             ✏️ Modifica
           </button>
+          <button
+            className="ghost"
+            style={{ color: "#b91c1c" }}
+            onClick={async () => {
+              if (!window.confirm(`Eliminare la pratica ${it.number}?`)) return;
+              try {
+                await api.deleteCase(it.id);
+                onChanged?.({ deleted: true });
+              } catch (e) {
+                console.error(e);
+                alert(e.message || "Errore eliminazione pratica");
+              }
+            }}
+          >
+            🗑️ Elimina
+          </button>
         </div>
       </div>
 
@@ -451,15 +467,34 @@ function CaseDetail({ it, clients, onChanged }) {
                     {" "}
                     {fmtMoney(residuo)}
                   </div>
-                  <button
-                    className="ghost"
-                    onClick={async () => {
-                      const r = await api.invoicePdf(inv.id);
-                      if (r?.url) window.open(r.url, "_blank");
-                    }}
-                  >
-                    PDF
-                  </button>
+                  <div className="row" style={{ gap: 6 }}>
+                    <button
+                      className="ghost"
+                      onClick={async () => {
+                        const r = await api.invoicePdf(inv.id);
+                        if (r?.url) window.open(r.url, "_blank");
+                      }}
+                    >
+                      PDF
+                    </button>
+                    <button
+                      className="ghost"
+                      style={{ color: "#b91c1c" }}
+                      onClick={async () => {
+                        if (!window.confirm(`Eliminare la fattura ${inv.number}?`)) return;
+                        try {
+                          await api.deleteInvoice(inv.id);
+                          await loadAll();
+                          onChanged?.();
+                        } catch (e) {
+                          console.error(e);
+                          alert(e.message || "Errore eliminazione fattura");
+                        }
+                      }}
+                    >
+                      ❌
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -723,15 +758,16 @@ export default function Cases() {
   const [numbering, setNumbering] = useState({ config: null, preview: null });
   const [q, setQ] = useState("");
 
-  async function load() {
+  async function load(options = {}) {
     const [p, c] = await Promise.all([api.cases(), api.clients()]);
     setList(p);
     setClients(c);
-    if (!sel && p.length) setSel(p[0]);
-    if (sel) {
-      const fresh = p.find((x) => x.id === sel.id);
-      if (fresh) setSel(fresh);
-    }
+    setSel((prev) => {
+      if (options.keepSelection === false) return p[0] || null;
+      if (!prev) return p[0] || null;
+      const fresh = p.find((x) => x.id === prev.id);
+      return fresh || (p[0] || null);
+    });
   }
 
   async function loadNumbering() {
@@ -803,8 +839,12 @@ export default function Cases() {
             <CaseDetail
               it={sel}
               clients={clients}
-              onChanged={() => {
-                load();
+              onChanged={(payload) => {
+                if (payload?.deleted) {
+                  load({ keepSelection: false });
+                } else {
+                  load();
+                }
               }}
             />
           ) : (

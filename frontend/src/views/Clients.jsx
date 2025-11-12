@@ -186,6 +186,157 @@ function ExpensesModal({ client, onClose }) {
   );
 }
 
+function ClientDocumentsModal({ client, onClose, onUpdated }) {
+  const [docs, setDocs] = useState([]);
+  const [form, setForm] = useState({ title: "", description: "", date: "", file: null, url: "" });
+  const [fileKey, setFileKey] = useState(0);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const resetForm = () => {
+    setForm({ title: "", description: "", date: "", file: null, url: "" });
+    setFileKey((k) => k + 1);
+  };
+
+  async function loadDocs() {
+    setLoading(true);
+    setErr("");
+    try {
+      const list = await api.clientDocuments(client.id);
+      setDocs(list);
+    } catch (e) {
+      console.error(e);
+      setErr("Errore caricamento documenti");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDocs();
+  }, [client.id]);
+
+  async function uploadDoc() {
+    setErr("");
+    if (!form.file && !form.url.trim()) {
+      setErr("Carica un file o inserisci un link");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.uploadClientDocument(client.id, {
+        title: form.title,
+        description: form.description,
+        date: form.date,
+        file: form.file || undefined,
+        url: form.url.trim() || undefined,
+      });
+      resetForm();
+      await loadDocs();
+      onUpdated?.();
+    } catch (e) {
+      console.error(e);
+      setErr(e.message || "Errore caricamento documento");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeDoc(id) {
+    if (!window.confirm("Eliminare il documento?")) return;
+    setErr("");
+    try {
+      await api.deleteClientDocument(client.id, id);
+      await loadDocs();
+      onUpdated?.();
+    } catch (e) {
+      console.error(e);
+      setErr("Errore eliminazione documento");
+    }
+  }
+
+  return (
+    <div className="modal">
+      <div className="pane grid" style={{ gap: 12, minWidth: 480 }}>
+        <b>Documenti — {client.name}</b>
+        <Banner text={err} />
+        <div className="grid" style={{ gap: 8, maxHeight: 260, overflow: "auto" }}>
+          {loading && <div style={{ opacity: 0.6 }}>Caricamento…</div>}
+          {!loading &&
+            docs.map((doc) => (
+              <div
+                key={doc.id}
+                className="row between"
+                style={{ borderBottom: "1px dashed #e5e7eb", padding: "6px 0" }}
+              >
+                <div className="grid" style={{ gap: 2 }}>
+                  <div>
+                    <b>{doc.title}</b> — {doc.date || ""}
+                  </div>
+                  {doc.description && <div style={{ fontSize: 12, opacity: 0.7 }}>{doc.description}</div>}
+                  {doc.fileName && <div style={{ fontSize: 12, opacity: 0.6 }}>{doc.fileName}</div>}
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  {doc.url && (
+                    <a className="ghost" href={doc.url} target="_blank" rel="noreferrer">
+                      Apri
+                    </a>
+                  )}
+                  <button className="ghost" onClick={() => removeDoc(doc.id)}>
+                    ❌
+                  </button>
+                </div>
+              </div>
+            ))}
+          {!loading && docs.length === 0 && <div style={{ opacity: 0.6 }}>Nessun documento.</div>}
+        </div>
+        <div className="grid" style={{ gap: 8 }}>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <input
+              placeholder="Titolo"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+            <input
+              placeholder="Descrizione"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+            <input
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              key={fileKey}
+              type="file"
+              onChange={(e) => setForm({ ...form, file: e.target.files?.[0] || null })}
+            />
+            {form.file && <span style={{ fontSize: 12 }}>{form.file.name}</span>}
+            <input
+              placeholder="Oppure incolla un link"
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              style={{ flex: 1, minWidth: 200 }}
+            />
+            <button onClick={uploadDoc} disabled={saving}>
+              ➕ Aggiungi documento
+            </button>
+          </div>
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+          <button className="ghost" onClick={onClose} disabled={saving}>
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ClientDeadlineModal({ client, onClose }) {
   const [cases, setCases] = useState([]);
   const [form, setForm] = useState({
@@ -294,6 +445,7 @@ export default function Clients() {
   const [showNew, setShowNew] = useState(false);
   const [clientExp, setClientExp] = useState(null);
   const [deadlineFor, setDeadlineFor] = useState(null);
+  const [docsClient, setDocsClient] = useState(null);
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
@@ -337,6 +489,20 @@ export default function Clients() {
   const countContacts = filtered.filter((c) => c.email || c.phone).length;
   const countNotes = filtered.filter((c) => c.notes).length;
   const pct = (n) => (filtered.length ? Math.round((n / filtered.length) * 100) : 0);
+
+  async function handleDeleteClient(client) {
+    if (!window.confirm(`Eliminare il cliente ${client.name}?`)) return;
+    try {
+      await api.deleteClient(client.id);
+      if (clientExp?.id === client.id) setClientExp(null);
+      if (deadlineFor?.id === client.id) setDeadlineFor(null);
+      if (docsClient?.id === client.id) setDocsClient(null);
+      await load();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Errore eliminazione cliente");
+    }
+  }
 
   return (
     <div className="grid">
@@ -494,6 +660,16 @@ export default function Clients() {
               >
                 🧾 Fatture
               </button>
+              <button className="ghost" onClick={() => setDocsClient(c)}>
+                📁 Documenti
+              </button>
+              <button
+                className="ghost"
+                style={{ color: "#b91c1c" }}
+                onClick={() => handleDeleteClient(c)}
+              >
+                🗑️ Elimina
+              </button>
             </div>
           </div>
         ))}
@@ -515,6 +691,13 @@ export default function Clients() {
       )}
       {deadlineFor && (
         <ClientDeadlineModal client={deadlineFor} onClose={() => setDeadlineFor(null)} />
+      )}
+      {docsClient && (
+        <ClientDocumentsModal
+          client={docsClient}
+          onClose={() => setDocsClient(null)}
+          onUpdated={() => load()}
+        />
       )}
     </div>
   );
