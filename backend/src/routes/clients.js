@@ -19,6 +19,20 @@ function ensureDir(dir) {
 
 ensureDir(CLIENT_DOC_DIR);
 
+async function removeDirRecursive(target) {
+  if (!target) return;
+  try {
+    if (typeof fs.promises.rm === "function") {
+      await fs.promises.rm(target, { recursive: true, force: true });
+    } else if (typeof fs.promises.rmdir === "function") {
+      await fs.promises.rmdir(target, { recursive: true });
+    }
+  } catch (err) {
+    if (err && ["ENOENT", "ENOTDIR", "ENOTEMPTY"].includes(err.code)) return;
+    throw err;
+  }
+}
+
 const storage = multer.diskStorage({
   destination(req, file, cb) {
     const clientId = req.params.id;
@@ -65,9 +79,15 @@ function absoluteStaticUrl(req, relativePath) {
   }
 }
 
+function normalizeClientType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "ufficio" ? "ufficio" : "fiducia";
+}
+
 function ensureClientDefaults(client) {
   if (!client) return;
   client.documents = Array.isArray(client.documents) ? client.documents : [];
+  client.clientType = normalizeClientType(client.clientType);
 }
 
 function serializeDocument(doc, req) {
@@ -131,6 +151,7 @@ router.post("/", (req, res) => {
     phone: sanitize(body.phone),
     address: sanitize(body.address),
     notes: sanitize(body.notes),
+    clientType: normalizeClientType(body.clientType),
     createdAt: now,
     updatedAt: now,
     documents: [],
@@ -159,6 +180,7 @@ router.put("/:id", (req, res) => {
     phone: sanitize(patch.phone ?? current.phone),
     address: sanitize(patch.address ?? current.address),
     notes: sanitize(patch.notes ?? current.notes),
+    clientType: normalizeClientType(patch.clientType ?? current.clientType),
     updatedAt: new Date().toISOString(),
   };
 
@@ -191,7 +213,7 @@ router.delete("/:id", (req, res) => {
       fs.promises.unlink(abs).catch(() => {});
     }
   });
-  fs.promises.rm(path.join(CLIENT_DOC_DIR, removed.id), { recursive: true, force: true }).catch(() => {});
+  removeDirRecursive(path.join(CLIENT_DOC_DIR, removed.id)).catch(() => {});
 
   saveDB();
   res.json({ ok: true });

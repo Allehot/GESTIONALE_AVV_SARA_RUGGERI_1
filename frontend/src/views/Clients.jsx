@@ -20,6 +20,7 @@ function NewClientModal({ onClose, onSaved }) {
     email: "",
     phone: "",
     address: "",
+    clientType: "fiducia",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -35,6 +36,7 @@ function NewClientModal({ onClose, onSaved }) {
         email: form.email?.trim(),
         phone: form.phone?.trim(),
         address: form.address?.trim(),
+        clientType: form.clientType,
       };
       if (!payload.name) throw new Error("Inserisci il nome / ragione sociale");
       await api.createClient(payload);
@@ -58,6 +60,13 @@ function NewClientModal({ onClose, onSaved }) {
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
         />
+        <select
+          value={form.clientType}
+          onChange={(e) => setForm({ ...form, clientType: e.target.value })}
+        >
+          <option value="fiducia">Cliente di fiducia</option>
+          <option value="ufficio">Cliente d'ufficio</option>
+        </select>
         <input
           placeholder="Codice fiscale"
           value={form.fiscalCode}
@@ -468,7 +477,15 @@ export default function Clients() {
     const q = query.trim().toLowerCase();
     const items = q
       ? arr.filter((c) => {
-          const fields = [c.name, c.fiscalCode, c.vatNumber, c.email, c.phone, c.address];
+          const fields = [
+            c.name,
+            c.fiscalCode,
+            c.vatNumber,
+            c.email,
+            c.phone,
+            c.address,
+            c.clientType === "ufficio" ? "ufficio" : "fiducia",
+          ];
           return fields.some((f) => String(f || "").toLowerCase().includes(q));
         })
       : arr;
@@ -615,6 +632,9 @@ export default function Clients() {
                 {c.email && <span className="client-chip">✉️ {c.email}</span>}
                 {c.phone && <span className="client-chip">☎️ {c.phone}</span>}
                 {c.address && <span className="client-chip">📍 {c.address}</span>}
+                <span className="client-chip">
+                  {c.clientType === "ufficio" ? "D'ufficio" : "Di fiducia"}
+                </span>
               </div>
               {c.notes && (
                 <div style={{ marginTop: 10, color: "var(--text-secondary)" }}>
