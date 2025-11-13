@@ -4,6 +4,11 @@ import multer from "multer";
 import ExcelJS from "exceljs";
 import { db, saveDB } from "../db.js";
 
+function normalizeClientType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "ufficio" ? "ufficio" : "fiducia";
+}
+
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
@@ -15,7 +20,7 @@ router.get("/export/excel", async (req,res)=>{
     ws.addRow(headers);
     rows.forEach(r=> ws.addRow(headers.map(h=> r[h])));
   };
-  addSheet("clients", db.clients||[], ["id","name","fiscalCode","vatNumber","email","phone","address","notes"]);
+  addSheet("clients", db.clients||[], ["id","name","fiscalCode","vatNumber","email","phone","address","notes","clientType"]);
   addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt"]);
   addSheet("invoices", db.invoices||[], ["id","number","date","clientId","caseId","status"]);
   addSheet("expenses", db.expenses||[], ["id","clientId","caseId","date","description","amount","type"]);
@@ -74,7 +79,10 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
       ids.add(item.id);
     });
   };
-  pushUnique((db.clients ||= []), clients);
+  pushUnique((db.clients ||= []), clients, (raw) => ({
+    ...raw,
+    clientType: normalizeClientType(raw.clientType),
+  }));
   pushUnique((db.cases ||= []), casesArr);
   pushUnique((db.invoices ||= []), invoices);
   pushUnique((db.expenses ||= []), expenses);
