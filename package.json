@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "bootstrap": "npm install --prefix backend && npm install --prefix frontend",
-    "dev": "node scripts/dev.js",
-    "build": "npm run build --prefix frontend"
+    "dev": "node scripts/dev.cjs",
+    "build": "npm run build --prefix frontend",
+    "build:exe": "npx --yes pkg@5.8.0 scripts/dev.cjs --targets node20-macos-x64,node20-macos-arm64 --out-path dist --compress GZip"
   }
 }
