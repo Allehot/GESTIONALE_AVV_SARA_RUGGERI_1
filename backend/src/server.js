@@ -36,5 +36,5 @@ app.use("/api/files", filesRouter);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use("/static", express.static(path.resolve(__dirname, "../data/static")));
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=> console.log("Backend listening on http://localhost:"+PORT));
