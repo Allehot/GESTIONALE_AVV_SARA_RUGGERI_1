@@ -61,6 +61,7 @@ function DayModal({ date, items, onClose, onUpdated }) {
   const [caseId, setCaseId] = useState("");
   const [cases, setCases] = useState([]);
   const [modalBusyId, setModalBusyId] = useState(null);
+  const isHearing = type === "udienza";
 
   useEffect(() => { (async () => setCases(await api.cases()))(); }, []);
 
@@ -153,22 +154,22 @@ function DayModal({ date, items, onClose, onUpdated }) {
         <div style={{ height: 1, background: "#e5e7eb", margin: "6px 0" }} />
 
         <b>Nuovo appuntamento</b>
-        <select value={caseId} onChange={(e) => setCaseId(e.target.value)}>
-          <option value="">(nessuna pratica)</option>
-          {cases.map(c => <option key={c.id} value={c.id}>{c.number} — {c.subject}</option>)}
-        </select>
-        <div className="row">
+        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
+          <select value={caseId} onChange={(e) => setCaseId(e.target.value)}>
+            <option value="">(nessuna pratica)</option>
+            {cases.map(c => <option key={c.id} value={c.id}>{c.number} — {c.subject}</option>)}
+          </select>
           <input type="time" value={time} onChange={e => setTime(e.target.value)} />
-          <select value={type} onChange={e => setType(e.target.value)}>
-            <option>udienza</option>
-            <option>deposito</option>
-            <option>termine</option>
-            <option>scadenza</option>
+          <select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="udienza">Udienza</option>
+            <option value="deposito">Deposito</option>
+            <option value="termine">Termine</option>
+            <option value="scadenza">Scadenza</option>
           </select>
         </div>
         <input placeholder="Titolo" value={title} onChange={e => setTitle(e.target.value)} />
         <input placeholder="Nota" value={note} onChange={e => setNote(e.target.value)} />
-        {type === "udienza" && (
+        {isHearing && (
           <>
             <input
               placeholder="Delegato / collega"
@@ -205,6 +206,7 @@ export default function Deadlines() {
   const [dayOpen, setDayOpen] = useState(null); // 'YYYY-MM-DD'
   const [showCompleted, setShowCompleted] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const icsUrl = "/api/calendar/ics";
 
   async function load() {
     try {
@@ -265,12 +267,14 @@ export default function Deadlines() {
         <h2>Calendario</h2>
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
           <div className="row" style={{ gap: 8 }}>
-            <a href="/api/calendar/ics" target="_blank" rel="noreferrer">
+            <a href={icsUrl} target="_blank" rel="noreferrer">
               <button className="ghost">📥 ICS</button>
             </a>
-            <button className="ghost" onClick={() => setMonthRef(new Date(monthRef.getFullYear(), monthRef.getMonth() - 1, 1))}>◀︎</button>
+            <button className="ghost" onClick={() => setMonthRef(new Date(monthRef.getFullYear(), monthRef.getMonth() - 1, 1))}>
+◀︎</button>
             <button className="ghost" onClick={() => setMonthRef(new Date())}>Oggi</button>
-            <button className="ghost" onClick={() => setMonthRef(new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 1))}>▶︎</button>
+            <button className="ghost" onClick={() => setMonthRef(new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 1))}>
+▶︎</button>
           </div>
           <label className="row" style={{ gap: 6, fontSize: 14 }}>
             <input
@@ -285,6 +289,31 @@ export default function Deadlines() {
               Nascoste {hiddenCompletedCount} scadenze completate
             </span>
           )}
+        </div>
+      </div>
+
+      <div className="card" style={{ display: "grid", gap: 12 }}>
+        <div className="row between" style={{ gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 240 }}>
+            <b>Sincronizza con Apple Calendar</b>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              Aggiungi l'URL ICS per avere udienze, scadenze e deleghe sempre aggiornate.
+            </div>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <code style={{ padding: "6px 8px", background: "#f3f4f6", borderRadius: 8 }}>
+              {typeof window !== "undefined" ? window.location.origin + icsUrl : icsUrl}
+            </code>
+            <button
+              className="ghost"
+              onClick={() => navigator.clipboard?.writeText?.((typeof window !== "undefined" ? window.location.origin : "") + icsUrl)}
+            >
+              Copia link
+            </button>
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: "#0f172a" }}>
+          In Apple Calendar: File → Nuova iscrizione calendario → incolla il link ICS. Le note udienza, il delegato e un promemoria 30 minuti prima compaiono automaticamente.
         </div>
       </div>
 

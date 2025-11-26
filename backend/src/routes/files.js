@@ -2,6 +2,7 @@
 import express from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
+import { randomUUID } from "crypto";
 import { db, saveDB } from "../db.js";
 
 function normalizeClientType(value) {
@@ -34,10 +35,22 @@ const toIsoDateTime = (value) => {
 // Export excel
 router.get("/export/excel", async (req,res)=>{
   const wb = new ExcelJS.Workbook();
+  const headerStyle = {
+    font: { bold: true, color: { argb: "FFFFFFFF" } },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } },
+    alignment: { vertical: "middle", horizontal: "center" },
+  };
+
   const addSheet = (name, rows, headers) => {
-    const ws = wb.addWorksheet(name);
-    ws.addRow(headers);
+    const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.addRow(headers).eachCell((cell) => {
+      cell.style = headerStyle;
+    });
     rows.forEach(r=> ws.addRow(headers.map(h=> r[h])));
+    headers.forEach((h, idx) => {
+      const column = ws.getColumn(idx + 1);
+      column.width = Math.max(12, Math.min(40, h.length + 6));
+    });
   };
   addSheet("clients", db.clients||[], ["id","name","fiscalCode","vatNumber","email","phone","address","notes","clientType"]);
   addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt"]);
@@ -108,9 +121,10 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
   const pushUnique = (arr, items, normalize)=>{
     const ids = new Set(arr.map(x=> x.id));
     items.forEach(raw=> {
-      if (!raw?.id) return;
+      if (!raw) return;
       const item = normalize ? normalize(raw) : raw;
-      if (!item?.id || ids.has(item.id)) return;
+      if (!item?.id) item.id = randomUUID();
+      if (ids.has(item.id)) return;
       arr.push(item);
       ids.add(item.id);
     });
@@ -119,11 +133,26 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
     ...raw,
     clientType: normalizeClientType(raw.clientType),
   }));
-  pushUnique((db.cases ||= []), casesArr);
-  pushUnique((db.invoices ||= []), invoices);
-  pushUnique((db.expenses ||= []), expenses);
+  pushUnique((db.cases ||= []), casesArr, (c) => ({
+    ...c,
+    id: String(c.id || randomUUID()).trim(),
+    createdAt: toIsoDateTime(c.createdAt) || new Date().toISOString(),
+    updatedAt: toIsoDateTime(c.updatedAt),
+  }));
+  pushUnique((db.invoices ||= []), invoices, (inv) => ({
+    ...inv,
+    id: String(inv.id || randomUUID()).trim(),
+    date: toIsoDate(inv.date),
+    createdAt: toIsoDateTime(inv.createdAt) || new Date().toISOString(),
+    updatedAt: toIsoDateTime(inv.updatedAt),
+  }));
+  pushUnique((db.expenses ||= []), expenses, (exp) => ({
+    ...exp,
+    id: String(exp.id || randomUUID()).trim(),
+    date: toIsoDate(exp.date),
+  }));
   pushUnique((db.deadlines ||= []), deadlines, (d) => ({
-    id: String(d.id || "").trim(),
+    id: String(d.id || randomUUID()).trim(),
     caseId: d.caseId || null,
     clientId: d.clientId || null,
     date: toIsoDate(d.date) || new Date().toISOString().slice(0, 10),
@@ -169,7 +198,17 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
     return guardian;
   });
   saveDB();
-  res.json({ ok:true, imported: { clients: clients.length, cases: casesArr.length, invoices: invoices.length, expenses: expenses.length, guardianships: guardians.length } });
+  res.json({
+    ok: true,
+    imported: {
+      clients: clients.length,
+      cases: casesArr.length,
+      invoices: invoices.length,
+      expenses: expenses.length,
+      deadlines: deadlines.length,
+      guardianships: guardians.length,
+    },
+  });
 });
 
 // DELETE expense (public path: /api/spese/:id via server mount)
