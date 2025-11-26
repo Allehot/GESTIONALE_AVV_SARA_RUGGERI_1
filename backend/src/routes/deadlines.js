@@ -7,6 +7,8 @@ const router = express.Router();
 
 function ensureDeadlineDefaults(deadline) {
   if (!deadline) return deadline;
+  if (!("delegate" in deadline)) deadline.delegate = "";
+  if (!("hearingNotes" in deadline)) deadline.hearingNotes = "";
   if (typeof deadline.completed !== "boolean") {
     deadline.completed = Boolean(deadline.completedAt);
   }
@@ -52,6 +54,8 @@ router.post("/", (req, res) => {
     type: b.type || "scadenza",      // es: udienza, deposito, termine perentorio…
     title: b.title || "",
     note: b.note || "",
+    delegate: b.delegate || "",
+    hearingNotes: b.hearingNotes || "",
     createdAt: new Date().toISOString(),
     updatedAt: null,
     completed: false,

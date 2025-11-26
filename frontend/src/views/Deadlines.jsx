@@ -56,6 +56,8 @@ function DayModal({ date, items, onClose, onUpdated }) {
   const [time, setTime] = useState("");
   const [type, setType] = useState("scadenza");
   const [note, setNote] = useState("");
+  const [delegate, setDelegate] = useState("");
+  const [hearingNotes, setHearingNotes] = useState("");
   const [caseId, setCaseId] = useState("");
   const [cases, setCases] = useState([]);
   const [modalBusyId, setModalBusyId] = useState(null);
@@ -94,6 +96,12 @@ function DayModal({ date, items, onClose, onUpdated }) {
                     {d.time || ""} {d.title || d.type}
                   </div>
                   <div style={{ opacity: 0.7 }}>{d.note || ""}</div>
+                  {(d.delegate || d.hearingNotes) && (
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                      {d.delegate && <div><b>Delegato:</b> {d.delegate}</div>}
+                      {d.hearingNotes && <div><b>Note udienza:</b> {d.hearingNotes}</div>}
+                    </div>
+                  )}
                   {completed && d.completedAt && (
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
                       Completata il {new Date(d.completedAt).toLocaleString("it-IT")}
@@ -160,12 +168,27 @@ function DayModal({ date, items, onClose, onUpdated }) {
         </div>
         <input placeholder="Titolo" value={title} onChange={e => setTitle(e.target.value)} />
         <input placeholder="Nota" value={note} onChange={e => setNote(e.target.value)} />
+        {type === "udienza" && (
+          <>
+            <input
+              placeholder="Delegato / collega"
+              value={delegate}
+              onChange={(e) => setDelegate(e.target.value)}
+            />
+            <textarea
+              placeholder="Note udienza"
+              value={hearingNotes}
+              onChange={(e) => setHearingNotes(e.target.value)}
+              rows={3}
+            />
+          </>
+        )}
 
         <div className="row end">
           <button className="ghost" onClick={onClose}>Chiudi</button>
           <button onClick={async () => {
-            await api.addDeadline({ caseId: caseId || null, date, time, type, title, note });
-            setTitle(""); setTime(""); setNote("");
+            await api.addDeadline({ caseId: caseId || null, date, time, type, title, note, delegate, hearingNotes });
+            setTitle(""); setTime(""); setNote(""); setDelegate(""); setHearingNotes("");
             await refresh();
           }}>Aggiungi</button>
         </div>
@@ -346,6 +369,12 @@ export default function Deadlines() {
                   <div>
                     <b style={{ textDecoration: d.completedAt ? "line-through" : "none" }}>{d.title || d.type}</b>
                     <span style={{ opacity: .7 }}> {d.note || ""}</span>
+                    {(d.delegate || d.hearingNotes) && (
+                      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                        {d.delegate && <div><b>Delegato:</b> {d.delegate}</div>}
+                        {d.hearingNotes && <div><b>Note udienza:</b> {d.hearingNotes}</div>}
+                      </div>
+                    )}
                     {d.completedAt && (
                       <div style={{ fontSize: 12, opacity: 0.75 }}>
                         Completata il {new Date(d.completedAt).toLocaleString("it-IT")}

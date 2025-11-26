@@ -12,6 +12,25 @@ function normalizeClientType(value) {
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
+const toIsoDate = (value) => {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const str = String(value).trim();
+  if (!str) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+};
+
+const toIsoDateTime = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const str = String(value).trim();
+  if (!str) return null;
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 // Export excel
 router.get("/export/excel", async (req,res)=>{
   const wb = new ExcelJS.Workbook();
@@ -24,6 +43,22 @@ router.get("/export/excel", async (req,res)=>{
   addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt"]);
   addSheet("invoices", db.invoices||[], ["id","number","date","clientId","caseId","status"]);
   addSheet("expenses", db.expenses||[], ["id","clientId","caseId","date","description","amount","type"]);
+  addSheet("deadlines", db.deadlines||[], [
+    "id",
+    "caseId",
+    "clientId",
+    "date",
+    "time",
+    "type",
+    "title",
+    "note",
+    "delegate",
+    "hearingNotes",
+    "createdAt",
+    "updatedAt",
+    "completed",
+    "completedAt",
+  ]);
   addSheet("guardianships", db.guardianships||[], [
     "id",
     "fullName",
@@ -66,6 +101,7 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
   const casesArr = take("cases");
   const invoices = take("invoices");
   const expenses = take("expenses");
+  const deadlines = take("deadlines");
   const guardiansSheet = take("guardianships");
   const guardians = guardiansSheet.length ? guardiansSheet : take("guardians");
   // naive merge by id uniqueness
@@ -86,25 +122,24 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
   pushUnique((db.cases ||= []), casesArr);
   pushUnique((db.invoices ||= []), invoices);
   pushUnique((db.expenses ||= []), expenses);
+  pushUnique((db.deadlines ||= []), deadlines, (d) => ({
+    id: String(d.id || "").trim(),
+    caseId: d.caseId || null,
+    clientId: d.clientId || null,
+    date: toIsoDate(d.date) || new Date().toISOString().slice(0, 10),
+    time: String(d.time || "").slice(0, 5),
+    type: String(d.type || "scadenza").trim() || "scadenza",
+    title: String(d.title || "").trim(),
+    note: String(d.note || "").trim(),
+    delegate: String(d.delegate || "").trim(),
+    hearingNotes: String(d.hearingNotes || "").trim(),
+    createdAt: toIsoDateTime(d.createdAt) || new Date().toISOString(),
+    updatedAt: toIsoDateTime(d.updatedAt),
+    completed: Boolean(d.completed || d.completedAt),
+    completedAt: toIsoDateTime(d.completedAt),
+  }));
   pushUnique((db.guardianships ||= []), guardians, (g)=>{
     const now = new Date();
-    const toIsoDate = (value)=>{
-      if (!value) return "";
-      if (value instanceof Date) return value.toISOString().slice(0,10);
-      const str = String(value).trim();
-      if (!str) return "";
-      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-      const parsed = new Date(str);
-      return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0,10);
-    };
-    const toIsoDateTime = (value)=>{
-      if (!value) return null;
-      if (value instanceof Date) return value.toISOString();
-      const str = String(value).trim();
-      if (!str) return null;
-      const parsed = new Date(str);
-      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-    };
     const guardian = {
       id: String(g.id).trim(),
       fullName: String(g.fullName || g.name || "").trim(),
