@@ -36,5 +36,16 @@ app.use("/api/files", filesRouter);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use("/static", express.static(path.resolve(__dirname, "../data/static")));
 
+// serve frontend build when disponibile (utile per l'eseguibile macOS)
+const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+app.use(express.static(frontendDist));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  const indexPath = path.join(frontendDist, "index.html");
+  res.sendFile(indexPath, (err) => {
+    if (err) next();
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=> console.log("Backend listening on http://localhost:"+PORT));
