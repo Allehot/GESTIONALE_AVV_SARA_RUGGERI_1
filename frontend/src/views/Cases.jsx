@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, fmtMoney } from "../api";
+import CaseEditModal from "../components/CaseEditModal.jsx";
 
 const TIMELINE_LABELS = {
   log: "Nota",
@@ -219,7 +220,17 @@ function CaseDetail({ it, clients, onChanged }) {
     return parts;
   }, [invoices, expenses, deadlines]);
 
-  const deleteBlocked = dependencySummary.length > 0;
+  const deleteBlocked = invoices.length > 0;
+  const cleanupSummary = useMemo(() => {
+    const parts = [];
+    if (expenses.length) {
+      parts.push(`${expenses.length} spes${expenses.length === 1 ? "a" : "e"}`);
+    }
+    if (deadlines.length) {
+      parts.push(`${deadlines.length} scadenz${deadlines.length === 1 ? "a" : "e"}`);
+    }
+    return parts;
+  }, [expenses, deadlines]);
 
   async function loadAll() {
     const [tl, inv, ex, dl] = await Promise.all([
@@ -242,6 +253,8 @@ function CaseDetail({ it, clients, onChanged }) {
     const c = clients.find((x) => x.id === it.clientId);
     return c ? c.name : "";
   }, [clients, it.clientId]);
+  const client = useMemo(() => clients.find((x) => x.id === it.clientId) || null, [clients, it.clientId]);
+  const [importKey, setImportKey] = useState(0);
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -262,18 +275,21 @@ function CaseDetail({ it, clients, onChanged }) {
             disabled={deleteBlocked}
             title={
               deleteBlocked
-                ? `Impossibile eliminare: presenti ${dependencySummary.join(", ")}. Rimuovere prima gli elementi collegati.`
+                ? `Impossibile eliminare: presenti ${dependencySummary.join(", ")}. Gestire prima le fatture collegate.`
                 : undefined
             }
             onClick={async () => {
               if (deleteBlocked) {
                 alert(
                   `Impossibile eliminare la pratica: risultano ancora ${dependencySummary.join(", ")}. ` +
-                    "Rimuovere o riassegnare i dati collegati prima di procedere."
+                    "Rimuovere o riassegnare prima le fatture collegate."
                 );
                 return;
               }
-              if (!window.confirm(`Eliminare la pratica ${it.number}?`)) return;
+              const cleanupText = cleanupSummary.length
+                ? `\nVerranno rimosse automaticamente anche ${cleanupSummary.join(", ")}.`
+                : "";
+              if (!window.confirm(`Eliminare la pratica ${it.number}?${cleanupText}`)) return;
               try {
                 await api.deleteCase(it.id);
                 onChanged?.({ deleted: true });
@@ -288,7 +304,7 @@ function CaseDetail({ it, clients, onChanged }) {
         </div>
       </div>
 
-      {deleteBlocked && (
+      {(deleteBlocked || cleanupSummary.length > 0) && (
         <div
           className="card"
           style={{
@@ -299,7 +315,9 @@ function CaseDetail({ it, clients, onChanged }) {
             fontSize: 14,
           }}
         >
-          Per eliminare la pratica occorre prima gestire gli elementi collegati: {dependencySummary.join(", ") || ""}.
+          {deleteBlocked
+            ? `Per eliminare la pratica occorre prima gestire: ${dependencySummary.join(", ")}.`
+            : `Eliminando la pratica verranno rimossi anche: ${cleanupSummary.join(", ")}.`}
         </div>
       )}
 
@@ -348,6 +366,96 @@ function CaseDetail({ it, clients, onChanged }) {
                 <span style={{ opacity: 0.6 }}>Valore:</span> <b>€ {fmtMoney(it.value)}</b>
               </div>
             </div>
+          </div>
+
+          <div className="card grid" style={{ gap: 12 }}>
+            <b>Cliente</b>
+            {client ? (
+              <div className="grid" style={{ gap: 6 }}>
+                <div>
+                  <span style={{ opacity: 0.6 }}>Nome:</span> <b>{client.name}</b>
+                </div>
+                <div style={{ color: "var(--text-secondary)" }}>
+                  {[
+                    client.fiscalCode ? `CF ${client.fiscalCode}` : null,
+                    client.vatNumber ? `P.IVA ${client.vatNumber}` : null,
+                    client.email,
+                    client.phone,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    className="ghost"
+                    onClick={() => {
+                      const payload = {
+                        name: client.name || "",
+                        fiscalCode: client.fiscalCode || "",
+                        vatNumber: client.vatNumber || "",
+                        email: client.email || "",
+                        phone: client.phone || "",
+                        address: client.address || "",
+                        notes: client.notes || "",
+                        clientType: client.clientType || "fiducia",
+                      };
+                      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                        type: "application/json",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `cliente-${client.name || it.number}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    ⬇️ Esporta cliente
+                  </button>
+                  <input
+                    key={importKey}
+                    type="file"
+                    accept="application/json"
+                    style={{ display: "none" }}
+                    id={`client-import-${it.id}`}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = async () => {
+                        try {
+                          const data = JSON.parse(String(reader.result || "{}"));
+                          await api.updateClient(client.id, {
+                            name: data.name,
+                            fiscalCode: data.fiscalCode,
+                            vatNumber: data.vatNumber,
+                            email: data.email,
+                            phone: data.phone,
+                            address: data.address,
+                            notes: data.notes,
+                            clientType: data.clientType,
+                          });
+                          setImportKey((k) => k + 1);
+                          onChanged?.();
+                        } catch (err) {
+                          console.error(err);
+                          alert("Import cliente non valido");
+                        }
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+                  <button
+                    className="ghost"
+                    onClick={() => document.getElementById(`client-import-${it.id}`)?.click()}
+                  >
+                    ⬆️ Importa cliente
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ opacity: 0.6 }}>Cliente non disponibile.</div>
+            )}
           </div>
 
           <QuickInvoice it={it} clients={clients} onDone={() => loadAll().then(() => onChanged?.())} />
@@ -560,6 +668,22 @@ function CaseDetail({ it, clients, onChanged }) {
                 <div>
                   {e.date} — {e.description || "spesa"} — € {fmtMoney(e.amount)}
                 </div>
+                <button
+                  className="ghost"
+                  style={{ color: "#b91c1c" }}
+                  onClick={async () => {
+                    if (!window.confirm("Eliminare questa spesa?")) return;
+                    try {
+                      await api.deleteCaseExpense(it.id, e.id);
+                      loadAll();
+                    } catch (err) {
+                      console.error(err);
+                      alert(err.message || "Errore eliminazione spesa");
+                    }
+                  }}
+                >
+                  Elimina
+                </button>
               </div>
             ))}
             {expenses.length === 0 && <div style={{ opacity: 0.6 }}>Nessuna spesa.</div>}
@@ -592,7 +716,7 @@ function CaseDetail({ it, clients, onChanged }) {
       )}
 
       {editOpen && (
-        <EditCaseModal
+        <CaseEditModal
           it={it}
           onClose={() => setEditOpen(false)}
           onSaved={() => {
@@ -601,88 +725,6 @@ function CaseDetail({ it, clients, onChanged }) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function EditCaseModal({ it, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    subject: it.subject || "",
-    court: it.court || "",
-    section: it.section || "",
-    judge: it.judge || "",
-    rgNumber: it.rgNumber || "",
-    caseType: it.caseType || "civile",
-    proceedingType: it.proceedingType || "giudiziale",
-    status: it.status || "aperta",
-    value: it.value || 0,
-  });
-  return (
-    <div className="modal">
-      <div className="pane grid" style={{ gap: 12, minWidth: 420 }}>
-        <b>Modifica pratica {it.number}</b>
-        <input
-          placeholder="Oggetto"
-          value={form.subject}
-          onChange={(e) => setForm({ ...form, subject: e.target.value })}
-        />
-        <input
-          placeholder="Ufficio"
-          value={form.court}
-          onChange={(e) => setForm({ ...form, court: e.target.value })}
-        />
-        <input
-          placeholder="Sezione"
-          value={form.section}
-          onChange={(e) => setForm({ ...form, section: e.target.value })}
-        />
-        <input
-          placeholder="Giudice"
-          value={form.judge}
-          onChange={(e) => setForm({ ...form, judge: e.target.value })}
-        />
-        <input
-          placeholder="RG"
-          value={form.rgNumber}
-          onChange={(e) => setForm({ ...form, rgNumber: e.target.value })}
-        />
-        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <select value={form.caseType} onChange={(e) => setForm({ ...form, caseType: e.target.value })}>
-            <option value="civile">Civile</option>
-            <option value="penale">Penale</option>
-          </select>
-          <select value={form.proceedingType} onChange={(e) => setForm({ ...form, proceedingType: e.target.value })}>
-            <option value="giudiziale">Giudiziale</option>
-            <option value="stragiudiziale">Stragiudiziale</option>
-          </select>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            <option value="aperta">Aperta</option>
-            <option value="sospesa">Sospesa</option>
-            <option value="chiusa">Chiusa</option>
-          </select>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Valore"
-            value={form.value}
-            onChange={(e) => setForm({ ...form, value: e.target.value })}
-          />
-        </div>
-        <div className="row end" style={{ gap: 8 }}>
-          <button className="ghost" onClick={onClose}>
-            Annulla
-          </button>
-          <button
-            onClick={async () => {
-              await api.updateCase(it.id, { ...form, value: Number(form.value || 0) });
-              onSaved?.();
-              onClose();
-            }}
-          >
-            Salva
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
