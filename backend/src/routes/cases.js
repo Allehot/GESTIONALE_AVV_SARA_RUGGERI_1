@@ -182,6 +182,9 @@ router.delete("/:id", (req, res) => {
   if (ix < 0) return res.status(404).json({ message: "Pratica non trovata" });
   const id = db.cases[ix].id;
   db.cases.splice(ix, 1);
+  db.expenses = (db.expenses || []).filter((e) => e.caseId !== id);
+  db.deadlines = (db.deadlines || []).filter((d) => d.caseId !== id);
+  db.logs = (db.logs || []).filter((l) => l.caseId !== id);
   (db.logs ||= []).push({
     id: uuidv4(),
     caseId: id,
@@ -248,6 +251,24 @@ router.post("/:id/expenses", (req, res) => {
   });
   saveDB();
   res.json(item);
+});
+
+router.delete("/:id/expenses/:expenseId", (req, res) => {
+  const caseId = req.params.id;
+  const expenseId = req.params.expenseId;
+  const idx = (db.expenses || []).findIndex((e) => e.id === expenseId && e.caseId === caseId);
+  if (idx < 0) return res.status(404).json({ message: "Spesa non trovata" });
+  const [removed] = db.expenses.splice(idx, 1);
+  (db.logs ||= []).push({
+    id: uuidv4(),
+    caseId,
+    action: "spesa-eliminata",
+    detail: `${removed.description || "spesa"} € ${Number(removed.amount || 0).toFixed(2)}`,
+    category: "spesa",
+    createdAt: new Date().toISOString(),
+  });
+  saveDB();
+  res.json({ ok: true });
 });
 
 // SCADENZE COLLEGATE

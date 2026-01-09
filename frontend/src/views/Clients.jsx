@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, fmtMoney } from "../api";
+import CaseEditModal from "../components/CaseEditModal.jsx";
 
 function Banner({ text, type = "error" }) {
   if (!text) return null;
@@ -449,12 +450,85 @@ function ClientDeadlineModal({ client, onClose }) {
   );
 }
 
+function ClientCasesModal({ client, onClose, onUpdated }) {
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingCase, setEditingCase] = useState(null);
+
+  async function loadCases() {
+    setLoading(true);
+    try {
+      const list = await api.clientCases(client.id);
+      setCases(list);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCases();
+  }, [client.id]);
+
+  return (
+    <div className="modal">
+      <div className="pane grid" style={{ gap: 12, minWidth: 520 }}>
+        <div className="row between">
+          <b>Pratiche di {client.name}</b>
+          <button className="ghost" onClick={onClose}>
+            Chiudi
+          </button>
+        </div>
+        <div className="grid" style={{ gap: 8 }}>
+          {loading && <div style={{ opacity: 0.6 }}>Caricamento pratiche…</div>}
+          {!loading && cases.length === 0 && <div style={{ opacity: 0.6 }}>Nessuna pratica collegata.</div>}
+          {!loading &&
+            cases.map((c) => (
+              <div key={c.id} className="row between" style={{ padding: "6px 0", borderBottom: "1px dashed #e5e7eb" }}>
+                <div>
+                  <b>{c.number}</b> — {c.subject || "(senza oggetto)"}
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>{c.status || "aperta"}</div>
+                </div>
+                <button
+                  className="ghost"
+                  onClick={async () => {
+                    try {
+                      const detail = await api.case(c.id);
+                      setEditingCase(detail);
+                    } catch (err) {
+                      console.error(err);
+                      alert("Impossibile aprire la pratica");
+                    }
+                  }}
+                >
+                  ✏️ Modifica
+                </button>
+              </div>
+            ))}
+        </div>
+        {editingCase && (
+          <CaseEditModal
+            it={editingCase}
+            onClose={() => setEditingCase(null)}
+            onSaved={() => {
+              loadCases();
+              onUpdated?.();
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Clients() {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [clientExp, setClientExp] = useState(null);
   const [deadlineFor, setDeadlineFor] = useState(null);
   const [docsClient, setDocsClient] = useState(null);
+  const [casesClient, setCasesClient] = useState(null);
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
@@ -514,6 +588,7 @@ export default function Clients() {
       if (clientExp?.id === client.id) setClientExp(null);
       if (deadlineFor?.id === client.id) setDeadlineFor(null);
       if (docsClient?.id === client.id) setDocsClient(null);
+      if (casesClient?.id === client.id) setCasesClient(null);
       await load();
     } catch (e) {
       console.error(e);
@@ -648,15 +723,7 @@ export default function Clients() {
               <button className="ghost" onClick={() => setDeadlineFor(c)}>🗓️ Scadenza</button>
               <button
                 className="ghost"
-                onClick={async () => {
-                  const arr = await api.clientCases(c.id);
-                  alert(
-                    `Pratiche:\n${
-                      arr.map((p) => `${p.number} - ${p.subject}`).join("\n") ||
-                      "(nessuna)"
-                    }`
-                  );
-                }}
+                onClick={() => setCasesClient(c)}
               >
                 📂 Pratiche
               </button>
@@ -711,6 +778,13 @@ export default function Clients() {
       )}
       {deadlineFor && (
         <ClientDeadlineModal client={deadlineFor} onClose={() => setDeadlineFor(null)} />
+      )}
+      {casesClient && (
+        <ClientCasesModal
+          client={casesClient}
+          onClose={() => setCasesClient(null)}
+          onUpdated={() => load()}
+        />
       )}
       {docsClient && (
         <ClientDocumentsModal

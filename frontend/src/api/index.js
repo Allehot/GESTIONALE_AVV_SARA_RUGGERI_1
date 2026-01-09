@@ -66,6 +66,8 @@ export const api = {
   caseTimeline: (id) => request(`${API}/casi/${id}/timeline`),
   caseExpenses: (id) => request(`${API}/casi/${id}/expenses`),
   addCaseExpense: (id, payload) => json(`${API}/casi/${id}/expenses`, { method: "POST", body: payload }),
+  deleteCaseExpense: (caseId, expenseId) =>
+    json(`${API}/casi/${caseId}/expenses/${expenseId}`, { method: "DELETE" }),
   caseDeadlines: (id) => request(`${API}/casi/${id}/deadlines`),
   addCaseDeadline: (id, payload) => json(`${API}/casi/${id}/deadlines`, { method: "POST", body: payload }),
   caseInvoices: (id) => request(`${API}/casi/${id}/invoices`),
