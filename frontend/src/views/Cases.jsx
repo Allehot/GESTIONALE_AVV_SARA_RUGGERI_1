@@ -220,6 +220,20 @@ function CaseDetail({ it, clients, onChanged }) {
     return parts;
   }, [invoices, expenses, deadlines]);
 
+  const payments = useMemo(() => {
+    const items = invoices.flatMap((inv) =>
+      (inv.payments || []).map((p) => ({
+        id: `${inv.id}-${p.id}`,
+        invoiceNumber: inv.number,
+        date: p.date || inv.date,
+        amount: p.amount,
+        method: p.method || "",
+        note: p.note || "",
+      }))
+    );
+    return items.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  }, [invoices]);
+
   const deleteBlocked = invoices.length > 0;
   const cleanupSummary = useMemo(() => {
     const parts = [];
@@ -331,6 +345,9 @@ function CaseDetail({ it, clients, onChanged }) {
         </div>
         <div className={`tab${tab === "invoices" ? " active" : ""}`} onClick={() => setTab("invoices")}>
           Fatture
+        </div>
+        <div className={`tab${tab === "payments" ? " active" : ""}`} onClick={() => setTab("payments")}>
+          Pagamenti
         </div>
         <div className={`tab${tab === "expenses" ? " active" : ""}`} onClick={() => setTab("expenses")}>
           Spese
@@ -656,6 +673,28 @@ function CaseDetail({ it, clients, onChanged }) {
               );
             })}
             {invoices.length === 0 && <div style={{ opacity: 0.6 }}>Nessuna fattura.</div>}
+          </div>
+        </div>
+      )}
+
+      {tab === "payments" && (
+        <div className="card grid" style={{ gap: 8 }}>
+          <b>Cronostoria pagamenti</b>
+          <div className="grid" style={{ gap: 8 }}>
+            {payments.map((p) => (
+              <div
+                key={p.id}
+                className="row between"
+                style={{ borderBottom: "1px dashed #e5e7eb", padding: "6px 0" }}
+              >
+                <div>
+                  {p.date || "-"} — <b>{p.invoiceNumber}</b> — € {fmtMoney(p.amount || 0)}
+                  {p.method && <span style={{ marginLeft: 6, opacity: 0.7 }}>({p.method})</span>}
+                  {p.note && <div style={{ opacity: 0.7 }}>{p.note}</div>}
+                </div>
+              </div>
+            ))}
+            {payments.length === 0 && <div style={{ opacity: 0.6 }}>Nessun pagamento registrato.</div>}
           </div>
         </div>
       )}

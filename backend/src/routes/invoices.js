@@ -45,6 +45,11 @@ const LINE_TYPE_LABELS = {
   anticipo: "Anticipo",
 };
 
+function cleanText(value) {
+  const text = String(value || "").trim();
+  return text ? text : null;
+}
+
 function sanitizeLineType(type) {
   if (!type) return "manual";
   const key = String(type).toLowerCase();
@@ -302,16 +307,25 @@ router.post("/:id/payments", (req, res) => {
   const residuo = computeResiduo(inv);
   const amount = requested > residuo ? residuo : requested;
 
-  const p = { id: uuidv4(), date: req.body?.date || new Date().toISOString().slice(0, 10), amount };
+  const method = cleanText(req.body?.method);
+  const note = cleanText(req.body?.note);
+  const p = {
+    id: uuidv4(),
+    date: req.body?.date || new Date().toISOString().slice(0, 10),
+    amount,
+    ...(method ? { method } : {}),
+    ...(note ? { note } : {}),
+  };
   (inv.payments ||= []).push(p);
   recalc(inv);
 
   if (inv.caseId) {
+    const methodLabel = method ? ` (${method})` : "";
     (db.logs ||= []).push({
       id: uuidv4(),
       caseId: inv.caseId,
       action: "pagamento-fattura",
-      detail: `Pagamento € ${amount.toFixed(2)} su fattura ${inv.number}`,
+      detail: `Pagamento € ${amount.toFixed(2)} su fattura ${inv.number}${methodLabel}`,
       category: "pagamento",
       createdAt: new Date().toISOString(),
     });

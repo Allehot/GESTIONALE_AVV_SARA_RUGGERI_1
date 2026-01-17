@@ -93,6 +93,8 @@ function LineList({ invoice, onAdd, onRemove }) {
 function PaymentsList({ invoice, onAdd, onRemove }) {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
+  const [method, setMethod] = useState("");
+  const [note, setNote] = useState("");
   return (
     <div className="grid" style={{ gap: 8 }}>
       <div className="grid" style={{ gap: 4 }}>
@@ -100,6 +102,8 @@ function PaymentsList({ invoice, onAdd, onRemove }) {
           <div key={p.id} className="row between" style={{ padding: "4px 0" }}>
             <div>
               {p.date} — € {fmtMoney(p.amount)}
+              {p.method && <span style={{ marginLeft: 6, opacity: 0.7 }}>({p.method})</span>}
+              {p.note && <div style={{ opacity: 0.7 }}>{p.note}</div>}
             </div>
             <button className="ghost" onClick={() => onRemove(p.id)}>
               ❌
@@ -115,14 +119,18 @@ function PaymentsList({ invoice, onAdd, onRemove }) {
           onChange={(e) => setAmount(e.target.value)}
           style={{ flex: 1 }}
         />
+        <input placeholder="Metodo" value={method} onChange={(e) => setMethod(e.target.value)} />
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input placeholder="Note" value={note} onChange={(e) => setNote(e.target.value)} />
         <button
           onClick={() => {
             const v = Number(String(amount).replace(",", "."));
             if (!(v > 0)) return;
-            onAdd({ amount: v, date: date || undefined });
+            onAdd({ amount: v, date: date || undefined, method: method || undefined, note: note || undefined });
             setAmount("");
             setDate("");
+            setMethod("");
+            setNote("");
           }}
         >
           ➕ Pagamento

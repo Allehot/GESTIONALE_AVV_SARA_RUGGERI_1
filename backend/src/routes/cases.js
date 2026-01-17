@@ -385,11 +385,13 @@ function buildTimeline(caseId) {
         },
       ];
       (inv.payments || []).forEach((p) => {
+        const methodLabel = p.method ? ` (${p.method})` : "";
         items.push({
           id: `invoice-payment-${inv.id}-${p.id}`,
           type: "payment",
-          detail: `Pagamento fattura ${inv.number}`,
+          detail: `Pagamento fattura ${inv.number}${methodLabel}`,
           amount: p.amount,
+          note: p.note || "",
           createdAt: `${p.date || new Date().toISOString().slice(0, 10)}T13:00`,
         });
       });
