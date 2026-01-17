@@ -136,6 +136,7 @@ router.post("/", (req, res) => {
     status: "aperta",
     value: round2(parseMoney(b.value)),
     notes: "",
+    legalAid: Boolean(b.legalAid),
     createdAt: new Date().toISOString(),
     customNumber: Boolean(manualNumber),
   };
@@ -164,6 +165,7 @@ router.put("/:id", (req, res) => {
   const before = db.cases[ix];
   const patch = { ...req.body };
   if ("value" in patch) patch.value = round2(parseMoney(patch.value));
+  if ("legalAid" in patch) patch.legalAid = Boolean(patch.legalAid);
   db.cases[ix] = { ...before, ...patch, updatedAt: new Date().toISOString() };
   (db.logs ||= []).push({
     id: uuidv4(),
@@ -273,6 +275,34 @@ router.delete("/:id/expenses/:expenseId", (req, res) => {
 
 // SCADENZE COLLEGATE
 router.get("/:id/deadlines", (req, res) => {
+  const caseId = req.params.id;
+  const now = new Date();
+  const isPastDeadline = (d) => {
+    if (!d?.date) return false;
+    const time = d.time ? String(d.time).slice(0, 5) : "";
+    const stamp = `${d.date}T${time || "23:59"}`;
+    const parsed = new Date(stamp);
+    if (Number.isNaN(parsed.getTime())) return false;
+    return parsed < now;
+  };
+  const current = db.deadlines || [];
+  const expired = current.filter((d) => d.caseId === caseId && isPastDeadline(d));
+  if (expired.length) {
+    db.deadlines = current.filter((d) => !(d.caseId === caseId && isPastDeadline(d)));
+    (db.logs ||= []).push(
+      ...expired.map((d) => ({
+        id: uuidv4(),
+        caseId,
+        action: "scadenza-eliminata",
+        detail: `Scadenza rimossa automaticamente: ${d.date}${d.time ? ` ${d.time}` : ""} - ${
+          d.title || d.type || "scadenza"
+        }`,
+        category: "scadenza",
+        createdAt: new Date().toISOString(),
+      }))
+    );
+    saveDB();
+  }
   const out = (db.deadlines || []).filter((d) => d.caseId === req.params.id);
   res.json(out.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))));
 });
@@ -374,6 +404,33 @@ router.get("/:id/timeline", (req, res) => {
   const caseId = req.params.id;
   const exists = (db.cases || []).some((c) => c.id === caseId);
   if (!exists) return res.status(404).json({ message: "Pratica non trovata" });
+  const now = new Date();
+  const current = db.deadlines || [];
+  const isPastDeadline = (d) => {
+    if (!d?.date) return false;
+    const time = d.time ? String(d.time).slice(0, 5) : "";
+    const stamp = `${d.date}T${time || "23:59"}`;
+    const parsed = new Date(stamp);
+    if (Number.isNaN(parsed.getTime())) return false;
+    return parsed < now;
+  };
+  const expired = current.filter((d) => d.caseId === caseId && isPastDeadline(d));
+  if (expired.length) {
+    db.deadlines = current.filter((d) => !(d.caseId === caseId && isPastDeadline(d)));
+    (db.logs ||= []).push(
+      ...expired.map((d) => ({
+        id: uuidv4(),
+        caseId,
+        action: "scadenza-eliminata",
+        detail: `Scadenza rimossa automaticamente: ${d.date}${d.time ? ` ${d.time}` : ""} - ${
+          d.title || d.type || "scadenza"
+        }`,
+        category: "scadenza",
+        createdAt: new Date().toISOString(),
+      }))
+    );
+    saveDB();
+  }
   res.json(buildTimeline(caseId));
 });
 

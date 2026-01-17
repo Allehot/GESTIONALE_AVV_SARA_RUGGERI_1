@@ -32,6 +32,94 @@ function Timeline({ events }) {
   );
 }
 
+function GuardianEditModal({ guardian, onClose, onSaved }) {
+  const [form, setForm] = useState(() => ({
+    fullName: guardian.fullName || "",
+    birthDate: guardian.birthDate || "",
+    fiscalCode: guardian.fiscalCode || "",
+    residence: guardian.residence || "",
+    status: guardian.status || "attivo",
+    supportLevel: guardian.supportLevel || "",
+    court: guardian.court || "",
+    judge: guardian.judge || "",
+  }));
+
+  useEffect(() => {
+    setForm({
+      fullName: guardian.fullName || "",
+      birthDate: guardian.birthDate || "",
+      fiscalCode: guardian.fiscalCode || "",
+      residence: guardian.residence || "",
+      status: guardian.status || "attivo",
+      supportLevel: guardian.supportLevel || "",
+      court: guardian.court || "",
+      judge: guardian.judge || "",
+    });
+  }, [guardian]);
+
+  return (
+    <div className="modal">
+      <div className="pane grid" style={{ gap: 12, minWidth: 420 }}>
+        <b>Modifica amministrato</b>
+        <input
+          placeholder="Nome completo"
+          value={form.fullName}
+          onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+        />
+        <input
+          type="date"
+          value={form.birthDate}
+          onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
+        />
+        <input
+          placeholder="Codice fiscale"
+          value={form.fiscalCode}
+          onChange={(e) => setForm({ ...form, fiscalCode: e.target.value })}
+        />
+        <input
+          placeholder="Residenza"
+          value={form.residence}
+          onChange={(e) => setForm({ ...form, residence: e.target.value })}
+        />
+        <input
+          placeholder="Stato"
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+        />
+        <input
+          placeholder="Supporto"
+          value={form.supportLevel}
+          onChange={(e) => setForm({ ...form, supportLevel: e.target.value })}
+        />
+        <input
+          placeholder="Tribunale"
+          value={form.court}
+          onChange={(e) => setForm({ ...form, court: e.target.value })}
+        />
+        <input
+          placeholder="Giudice"
+          value={form.judge}
+          onChange={(e) => setForm({ ...form, judge: e.target.value })}
+        />
+        <div className="row end" style={{ gap: 8 }}>
+          <button className="ghost" onClick={onClose}>
+            Annulla
+          </button>
+          <button
+            onClick={async () => {
+              await api.updateGuardian(guardian.id, form);
+              onSaved?.();
+              onClose();
+            }}
+          >
+            Salva
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Documents({ guardian, onRefresh }) {
   const [newFolderName, setNewFolderName] = useState("");
   const [newDoc, setNewDoc] = useState({ title: "", description: "", file: null, date: "" });
@@ -411,16 +499,28 @@ function GuardianTimeline({ guardian, timeline, onRefresh }) {
   );
 }
 
-function GuardianDetail({ guardian, summary, timeline, onRefresh }) {
+function GuardianDetail({ guardian, summary, timeline, onRefresh, onEdit, onDelete }) {
   const [tab, setTab] = useState("summary");
   const totals = summary || { incomes: 0, expenses: 0, deposits: 0, medical: 0, structure: 0, balance: 0 };
 
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="card grid" style={{ gap: 8 }}>
-        <div style={{ fontSize: 18, fontWeight: 800 }}>{guardian.fullName}</div>
-        <div style={{ opacity: 0.7 }}>{guardian.fiscalCode}</div>
-        <div style={{ opacity: 0.6 }}>{guardian.residence}</div>
+        <div className="row between" style={{ alignItems: "center", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{guardian.fullName}</div>
+            <div style={{ opacity: 0.7 }}>{guardian.fiscalCode}</div>
+            <div style={{ opacity: 0.6 }}>{guardian.residence}</div>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="ghost" onClick={onEdit}>
+              ✏️ Modifica
+            </button>
+            <button className="ghost" style={{ color: "#b91c1c" }} onClick={onDelete}>
+              🗑️ Elimina
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="tabs">
@@ -487,6 +587,7 @@ export default function Guardians() {
   const [summary, setSummary] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [newName, setNewName] = useState("");
+  const [editing, setEditing] = useState(null);
 
   async function loadList() {
     const guardians = await api.guardians();
@@ -517,6 +618,22 @@ export default function Guardians() {
   const handleRefresh = async () => {
     await loadDetail(selectedId);
     await loadList();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Eliminare questo amministrato?")) return;
+    await api.deleteGuardian(id);
+    const guardians = await api.guardians();
+    setList(guardians);
+    const nextId = guardians[0]?.id || null;
+    setSelectedId(nextId);
+    if (nextId) {
+      await loadDetail(nextId);
+    } else {
+      setDetail(null);
+      setSummary(null);
+      setTimeline([]);
+    }
   };
 
   return (
@@ -568,12 +685,22 @@ export default function Guardians() {
               summary={summary}
               timeline={timeline}
               onRefresh={handleRefresh}
+              onEdit={() => setEditing(detail)}
+              onDelete={() => handleDelete(detail.id)}
             />
           ) : (
             <div className="card" style={{ opacity: 0.6 }}>Seleziona un amministrato per visualizzare i dettagli.</div>
           )}
         </div>
       </div>
+
+      {editing && (
+        <GuardianEditModal
+          guardian={editing}
+          onClose={() => setEditing(null)}
+          onSaved={handleRefresh}
+        />
+      )}
     </div>
   );
 }
