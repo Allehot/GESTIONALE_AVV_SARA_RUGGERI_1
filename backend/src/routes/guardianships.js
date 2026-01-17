@@ -159,6 +159,31 @@ router.get("/:id", (req, res) => {
   res.json(serializeGuardian(g, req));
 });
 
+router.put("/:id", (req, res) => {
+  const g = findGuardian(req.params.id);
+  if (!g) return res.status(404).json({ message: "Amministrato non trovato" });
+  const body = req.body || {};
+  g.fullName = body.fullName ?? g.fullName;
+  g.birthDate = body.birthDate ?? g.birthDate;
+  g.fiscalCode = body.fiscalCode ?? g.fiscalCode;
+  g.residence = body.residence ?? g.residence;
+  g.status = body.status ?? g.status;
+  g.supportLevel = body.supportLevel ?? g.supportLevel;
+  g.court = body.court ?? g.court;
+  g.judge = body.judge ?? g.judge;
+  g.updatedAt = new Date().toISOString();
+  saveDB();
+  res.json(serializeGuardian(g, req));
+});
+
+router.delete("/:id", (req, res) => {
+  const ix = (db.guardianships || []).findIndex((x) => x.id === req.params.id);
+  if (ix < 0) return res.status(404).json({ message: "Amministrato non trovato" });
+  db.guardianships.splice(ix, 1);
+  saveDB();
+  res.json({ ok: true });
+});
+
 router.get("/:id/summary", (req, res) => {
   const g = findGuardian(req.params.id);
   if (!g) return res.status(404).json({ message: "Amministrato non trovato" });

@@ -264,6 +264,7 @@ function CaseDetail({ it, clients, onChanged }) {
             {it.number} — {it.subject || "(senza oggetto)"}
           </div>
           <div style={{ opacity: 0.7 }}>{clientName}</div>
+          {it.legalAid && <div style={{ marginTop: 4 }}><Badge label="Gratuito patrocinio" tone="success" /></div>}
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button className="ghost" onClick={() => setEditOpen(true)}>
@@ -364,6 +365,10 @@ function CaseDetail({ it, clients, onChanged }) {
               </div>
               <div>
                 <span style={{ opacity: 0.6 }}>Valore:</span> <b>€ {fmtMoney(it.value)}</b>
+              </div>
+              <div>
+                <span style={{ opacity: 0.6 }}>Gratuito patrocinio:</span>{" "}
+                <b>{it.legalAid ? "Sì" : "No"}</b>
               </div>
             </div>
           </div>
@@ -737,6 +742,7 @@ function NewCaseModal({ clients, numbering, onClose, onSaved }) {
     caseType: "civile",
     manualNumber: "",
     useManual: false,
+    legalAid: false,
   });
   const [preview, setPreview] = useState("");
 
@@ -807,6 +813,14 @@ function NewCaseModal({ clients, numbering, onClose, onSaved }) {
             onChange={(e) => setForm({ ...form, manualNumber: e.target.value })}
           />
         )}
+        <label className="row" style={{ alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={form.legalAid}
+            onChange={(e) => setForm({ ...form, legalAid: e.target.checked })}
+          />
+          Gratuito patrocinio
+        </label>
         <div className="row end" style={{ gap: 8 }}>
           <button className="ghost" onClick={onClose}>
             Annulla
@@ -818,6 +832,7 @@ function NewCaseModal({ clients, numbering, onClose, onSaved }) {
                 subject: form.subject,
                 court: form.court,
                 caseType: form.caseType,
+                legalAid: form.legalAid,
               };
               if (allowManual && form.useManual && form.manualNumber) {
                 payload.manualNumber = form.manualNumber;

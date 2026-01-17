@@ -12,6 +12,7 @@ export default function CaseEditModal({ it, onClose, onSaved }) {
     proceedingType: it.proceedingType || "giudiziale",
     status: it.status || "aperta",
     value: it.value || 0,
+    legalAid: Boolean(it.legalAid),
   });
   return (
     <div className="modal">
@@ -64,6 +65,14 @@ export default function CaseEditModal({ it, onClose, onSaved }) {
             onChange={(e) => setForm({ ...form, value: e.target.value })}
           />
         </div>
+        <label className="row" style={{ alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={form.legalAid}
+            onChange={(e) => setForm({ ...form, legalAid: e.target.checked })}
+          />
+          Gratuito patrocinio
+        </label>
         <div className="row end" style={{ gap: 8 }}>
           <button className="ghost" onClick={onClose}>
             Annulla

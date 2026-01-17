@@ -53,7 +53,7 @@ router.get("/export/excel", async (req,res)=>{
     });
   };
   addSheet("clients", db.clients||[], ["id","name","fiscalCode","vatNumber","email","phone","address","notes","clientType"]);
-  addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt"]);
+  addSheet("cases", db.cases||[], ["id","number","clientId","subject","court","status","createdAt","legalAid"]);
   addSheet("invoices", db.invoices||[], ["id","number","date","clientId","caseId","status"]);
   addSheet("expenses", db.expenses||[], ["id","clientId","caseId","date","description","amount","type"]);
   addSheet("deadlines", db.deadlines||[], [
@@ -138,6 +138,7 @@ router.post("/import/excel", upload.single("file"), async (req,res)=>{
     id: String(c.id || randomUUID()).trim(),
     createdAt: toIsoDateTime(c.createdAt) || new Date().toISOString(),
     updatedAt: toIsoDateTime(c.updatedAt),
+    legalAid: Boolean(c.legalAid),
   }));
   pushUnique((db.invoices ||= []), invoices, (inv) => ({
     ...inv,
