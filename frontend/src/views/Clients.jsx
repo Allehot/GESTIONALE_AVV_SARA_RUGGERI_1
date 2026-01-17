@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, fmtMoney } from "../api";
-import CaseEditModal from "../components/CaseEditModal.jsx";
+import CaseDetail from "../components/CaseDetail.jsx";
 
 function Banner({ text, type = "error" }) {
   if (!text) return null;
@@ -450,7 +450,7 @@ function ClientDeadlineModal({ client, onClose }) {
   );
 }
 
-function ClientCasesModal({ client, onClose, onUpdated }) {
+function ClientCasesModal({ client, clients, onClose, onUpdated }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingCase, setEditingCase] = useState(null);
@@ -508,14 +508,39 @@ function ClientCasesModal({ client, onClose, onUpdated }) {
             ))}
         </div>
         {editingCase && (
-          <CaseEditModal
-            it={editingCase}
-            onClose={() => setEditingCase(null)}
-            onSaved={() => {
-              loadCases();
-              onUpdated?.();
-            }}
-          />
+          <div className="modal">
+            <div
+              className="pane grid"
+              style={{ gap: 16, minWidth: 900, maxWidth: "95vw", maxHeight: "85vh", overflow: "auto" }}
+            >
+              <div className="row between">
+                <b>Dettaglio pratica</b>
+                <button className="ghost" onClick={() => setEditingCase(null)}>
+                  Chiudi
+                </button>
+              </div>
+              <CaseDetail
+                it={editingCase}
+                clients={clients}
+                onChanged={async (payload) => {
+                  if (payload?.deleted) {
+                    setEditingCase(null);
+                    loadCases();
+                    onUpdated?.();
+                    return;
+                  }
+                  try {
+                    const detail = await api.case(editingCase.id);
+                    setEditingCase(detail);
+                  } catch (err) {
+                    console.error(err);
+                  }
+                  loadCases();
+                  onUpdated?.();
+                }}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -782,6 +807,7 @@ export default function Clients() {
       {casesClient && (
         <ClientCasesModal
           client={casesClient}
+          clients={list}
           onClose={() => setCasesClient(null)}
           onUpdated={() => load()}
         />
